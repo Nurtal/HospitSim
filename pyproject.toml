@@ -20,3 +20,9 @@ dev = ["hospital_simulator[viz,test]"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hospital_simulator*"]
+
+[tool.setuptools.package-data]
+hospital_simulator = ["data/*.yaml"]

@@ -1,0 +1,27 @@
+# Parcours cliniques d'exemple (Phase 2).
+# Chaque parcours associe un diagnostic CIM-10, des procédures CCAM attendues
+# et les probabilités de transition vers les devenirs possibles.
+
+pneumonia:
+  diagnosis:
+    icd10: J18.9
+  procedures:
+    - chest_xray
+    - blood_test
+    - oxygen_therapy
+  transitions:
+    ICU: 0.08
+    Ward: 0.85
+    Discharge: 0.07
+
+heart_failure:
+  diagnosis:
+    icd10: I50.0
+  procedures:
+    - ecg
+    - blood_test
+    - echocardiography
+  transitions:
+    ICU: 0.15
+    Ward: 0.75
+    Discharge: 0.10

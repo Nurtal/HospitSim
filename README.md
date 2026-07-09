@@ -351,10 +351,10 @@ hdts/
 
 ## Phase 2 — Clinical modeling
 
-* [ ] CIM-10 integration
-* [ ] CCAM procedures
-* [ ] Clinical pathway YAML files
-* [ ] Comorbidity handling
+* [x] CIM-10 integration
+* [x] CCAM procedures
+* [x] Clinical pathway YAML files
+* [x] Comorbidity handling
 
 ## Phase 3 — Data-driven calibration
 

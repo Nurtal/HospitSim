@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import typing
-import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from hospital_simulator.models._cid_validator import CID10Validator
 
 
 @dataclass
@@ -53,6 +54,7 @@ class Patient:
     poids: typing.Optional[float] = None
     taille: typing.Optional[float] = None
     diagnostic_principal: str = field(default='', metadata={'comment': 'Code CIM-10'})
+    diagnostics_secondaires: list[str] = field(default_factory=list, metadata={'comment': 'Comorbidités CIM-10'})
 
     # Champs cycle de vie (Phase 1) - initialisés à des valeurs par defaut cohérentes.
     status_admission: str | None = STATUS_INCOMING  
@@ -66,6 +68,9 @@ class Patient:
     def __post_init__(self) -> None:
         """Validation post-initialisation."""
         self._validate_status(self.status_admission or Patient.STATUS_INCOMING)
+        self._validate_diagnosis(self.diagnostic_principal)
+        for code in self.diagnostics_secondaires:
+            self._validate_diagnosis(code)
 
     @staticmethod
     def _validate_status(status: str) -> None:
@@ -74,6 +79,12 @@ class Patient:
             raise ValueError(
                 f"Statut invalide ! Attendu parmi {Patient.VALID_STATUSES}, recu '{status}'."
             )
+
+    @staticmethod
+    def _validate_diagnosis(code: str) -> None:
+        """Valide un code CIM-10 s'il est renseigné (chaîne vide = pas de diagnostic)."""
+        if code and not CID10Validator.is_valid(code):
+            raise ValueError(f"Code CIM-10 invalide : {code!r}.")
     
     @property  
     def is_incoming(self) -> bool:
@@ -99,6 +110,31 @@ class Patient:
         ):
             return self.current_admission_service_name
         return None
+
+    # ---- Comorbidités (Phase 2) ----
+
+    def add_comorbidity(self, code: str) -> None:
+        """Ajoute une comorbidité (diagnostic secondaire) au patient.
+
+        Args:
+            code: Code CIM-10 de la comorbidité.
+
+        Raises:
+            ValueError: si le code CIM-10 est invalide.
+        """
+        self._validate_diagnosis(code)
+        if code not in self.diagnostics_secondaires:
+            self.diagnostics_secondaires.append(code)
+
+    @property
+    def comorbidity_count(self) -> int:
+        """Nombre de comorbidités (diagnostics secondaires) enregistrées."""
+        return len(self.diagnostics_secondaires)
+
+    @property
+    def has_comorbidities(self) -> bool:
+        """True si le patient a au moins une comorbidité."""
+        return self.comorbidity_count > 0
 
     # ---- Méthodes publiques Phase 1 ----
         
