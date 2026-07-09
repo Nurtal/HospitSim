@@ -437,3 +437,161 @@ def run_replications(
         for i in range(n_replications)
     ]
     return ReplicatedResult(scenario=scenario, runs=runs)
+
+
+# --- Analyse de sensibilité (balayage d'un paramètre) ---
+
+# Champs scalaires du Scenario balayables directement par nom.
+_SWEEPABLE_SCALARS = frozenset({
+    "days",
+    "arrival_rate_per_day",
+    "admission_multiplier",
+    "default_los_days",
+    "warmup_days",
+    "entry_service",
+})
+
+
+def _apply_parameter(scenario: Scenario, parameter: str, value) -> Scenario:
+    """Renvoie une copie du scénario avec ``parameter`` fixé à ``value``.
+
+    ``parameter`` accepte :
+        * un champ scalaire du Scenario (ex: ``"arrival_rate_per_day"``) ;
+        * ``"capacity:<service>"`` — capacité de base d'un service ;
+        * ``"capacity_multiplier:<service>"`` — multiplicateur de capacité ;
+        * ``"mean_los:<service>"`` — durée moyenne de séjour d'un service.
+    """
+    if parameter in _SWEEPABLE_SCALARS:
+        return replace(scenario, **{parameter: value})
+
+    if ":" in parameter:
+        kind, service = parameter.split(":", 1)
+        if kind == "capacity":
+            new = dict(scenario.service_capacities)
+            new[service] = value
+            return replace(scenario, service_capacities=new)
+        if kind == "capacity_multiplier":
+            new = dict(scenario.capacity_multipliers)
+            new[service] = value
+            return replace(scenario, capacity_multipliers=new)
+        if kind == "mean_los":
+            new = dict(scenario.mean_los_days)
+            new[service] = value
+            return replace(scenario, mean_los_days=new)
+
+    raise ValueError(
+        f"Paramètre non balayable : {parameter!r}. Utilisez un champ scalaire "
+        f"({sorted(_SWEEPABLE_SCALARS)}) ou 'capacity:<svc>' / "
+        f"'capacity_multiplier:<svc>' / 'mean_los:<svc>'."
+    )
+
+
+@dataclass
+class SensitivitySweepResult:
+    """Résultat d'un balayage de sensibilité sur un paramètre.
+
+    Attributs :
+        scenario: Le scénario de base.
+        parameter: Le paramètre balayé.
+        values: Les valeurs testées (axe des abscisses).
+        metrics: Les métriques suivies.
+        confidence: Niveau de confiance des IC.
+        n_replications: Réplications par valeur.
+        data: ``{metric: [{value, mean, ci_low, ci_high, std, n}, ...]}`` — un
+            point par valeur, prêt à tracer.
+    """
+
+    scenario: Scenario
+    parameter: str
+    values: list
+    metrics: list[str]
+    confidence: float
+    n_replications: int
+    data: dict[str, list[dict]] = field(default_factory=dict)
+
+    def points(self, metric: str) -> list[dict]:
+        """Renvoie la liste des points (value, mean, ci_low, ci_high) d'une métrique."""
+        return self.data[metric]
+
+    def render(self) -> str:
+        """Rend un tableau texte du balayage (une section par métrique)."""
+        lines = [
+            f"Sensibilité '{self.parameter}' — scénario '{self.scenario.name}' "
+            f"({self.n_replications} réplications, IC {int(self.confidence * 100)}%)"
+        ]
+        for metric in self.metrics:
+            lines.append(f"  [{metric}]")
+            for pt in self.data[metric]:
+                lines.append(
+                    f"    {self.parameter}={pt['value']!s:>8} : "
+                    f"{pt['mean']:>10.3f}  [{pt['ci_low']:.3f}, {pt['ci_high']:.3f}]"
+                )
+        return "\n".join(lines)
+
+
+def sensitivity_sweep(
+    scenario: Scenario,
+    parameter: str,
+    values,
+    metrics: list[str],
+    *,
+    n_replications: int = 30,
+    base_seed: int | None = None,
+    confidence: float = 0.95,
+) -> SensitivitySweepResult:
+    """Balaye un paramètre et mesure l'effet sur des indicateurs (avec IC).
+
+    Pour chaque valeur de ``values``, exécute ``n_replications`` réplications du
+    scénario modifié et récupère la moyenne et l'intervalle de confiance de
+    chaque métrique demandée.
+
+    Args:
+        scenario: Scénario de base.
+        parameter: Paramètre à balayer (cf. :func:`_apply_parameter`).
+        values: Valeurs à tester.
+        metrics: Clés d'indicateurs à suivre (plates, ex: ``"deaths"`` ou
+            ``"ICU.mean_occupancy_rate"``).
+        n_replications: Réplications par valeur.
+        base_seed: Graine de base (partagée entre valeurs pour un contraste
+            reproductible ; par défaut ``scenario.seed`` sinon 0).
+        confidence: Niveau de confiance des IC.
+
+    Returns:
+        Un :class:`SensitivitySweepResult`.
+    """
+    values = list(values)
+    if base_seed is None:
+        base_seed = scenario.seed if scenario.seed is not None else 0
+
+    data: dict[str, list[dict]] = {metric: [] for metric in metrics}
+    for value in values:
+        variant = _apply_parameter(scenario, parameter, value)
+        summary = run_replications(
+            variant, n_replications, base_seed=base_seed
+        ).summary(confidence=confidence)
+        for metric in metrics:
+            if metric not in summary:
+                raise KeyError(
+                    f"Métrique inconnue : {metric!r}. Disponibles : {sorted(summary)}."
+                )
+            s = summary[metric]
+            data[metric].append(
+                {
+                    "value": value,
+                    "mean": s["mean"],
+                    "ci_low": s["ci_low"],
+                    "ci_high": s["ci_high"],
+                    "std": s["std"],
+                    "n": s["n"],
+                }
+            )
+
+    return SensitivitySweepResult(
+        scenario=scenario,
+        parameter=parameter,
+        values=values,
+        metrics=list(metrics),
+        confidence=confidence,
+        n_replications=n_replications,
+        data=data,
+    )

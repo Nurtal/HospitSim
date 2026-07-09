@@ -43,8 +43,10 @@ from hospital_simulator.scenario import (
     SimulationEngine,
     SimulationResult,
     ReplicatedResult,
+    SensitivitySweepResult,
     run_scenario,
     run_replications,
+    sensitivity_sweep,
 )
 
 __all__ = [
@@ -82,6 +84,8 @@ __all__ = [
     "SimulationEngine",
     "SimulationResult",
     "ReplicatedResult",
+    "SensitivitySweepResult",
     "run_scenario",
     "run_replications",
+    "sensitivity_sweep",
 ]
