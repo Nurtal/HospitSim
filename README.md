@@ -17,6 +17,72 @@ The objective is not to reproduce the entire complexity of a hospital, but to pr
 
 ---
 
+# ⚡ Installation & Quickstart
+
+## Installation
+
+```bash
+pip install -e ".[dev]"   # core + viz (matplotlib) + test extras
+# core only (stdlib + pyyaml): pip install -e .
+```
+
+## Run a simulation and print a dashboard
+
+```python
+from hospital_simulator import Scenario, run_scenario, print_dashboard
+
+result = run_scenario(Scenario(name="baseline", days=60, arrival_rate_per_day=12.0, seed=2026))
+print_dashboard(result)
+```
+
+## What-if analysis with confidence intervals
+
+```python
+from hospital_simulator import Scenario, run_replications
+
+base = Scenario(days=90, warmup_days=15, arrival_rate_per_day=12.0, seed=2026)
+icu_cut = base.with_capacity_change("ICU", 0.8, name="-20% ICU beds")   # remove 20% of ICU beds
+
+rep = run_replications(icu_cut, n_replications=40)   # 40 reproducible replications
+print(rep.render_summary(metrics=["blocked_transfers", "ICU.saturation_days"]))
+```
+
+## Sensitivity sweep (dose–response with CIs)
+
+```python
+from hospital_simulator import Scenario, sensitivity_sweep
+
+sweep = sensitivity_sweep(
+    Scenario(days=90, warmup_days=15, seed=2026),
+    parameter="capacity:ICU", values=[6, 8, 10, 12, 16, 20],
+    metrics=["blocked_transfers", "ICU.saturation_days"], n_replications=40,
+)
+print(sweep.render())
+# Figures (requires the `viz` extra):
+# from hospital_simulator.plotting import plot_sensitivity
+# plot_sensitivity(sweep, "blocked_transfers", save_path="sensitivity.png")
+```
+
+## Patient with a CIM-10 diagnosis and comorbidities
+
+```python
+from hospital_simulator import Patient
+
+p = Patient(age=78, sexe="F", diagnostic_principal="J18.9")
+p.add_comorbidity("I50.0")
+p.add_comorbidity("E11.9")
+```
+
+## Calibrate from OMOP data
+
+See the end-to-end, reproducible example at
+[`examples/omop_to_scenario.py`](examples/omop_to_scenario.py): it builds a
+synthetic OMOP dataset, recovers the transition/length-of-stay parameters via
+`estimate_transition_probabilities` / `estimate_length_of_stay`, and runs a
+calibrated, replicated what-if scenario.
+
+---
+
 # 🎯 Objectives
 
 The project aims to provide:
@@ -55,12 +121,9 @@ Example:
 ```python
 Patient(
     age=78,
-    sex="F",
-    primary_diagnosis="J18.9",
-    secondary_diagnoses=[
-        "I50.0",
-        "E11.9"
-    ]
+    sexe="F",
+    diagnostic_principal="J18.9",
+    diagnostics_secondaires=["I50.0", "E11.9"],
 )
 ```
 
@@ -142,10 +205,8 @@ Each service has:
 Example:
 
 ```python
-EmergencyDepartment(
-    capacity=40,
-    mean_waiting_time="2h"
-)
+registry = ServiceRegistry()
+registry.register_service("ED", capacity=40)
 ```
 
 ---
@@ -159,10 +220,7 @@ Healthcare procedures are represented using:
 Example:
 
 ```python
-Procedure(
-    code="ZZLF900",
-    label="Chest X-Ray"
-)
+MedicalProcedure(name="Chest X-Ray", code="ZZLF900")
 ```
 
 Procedures can depend on:
@@ -215,9 +273,9 @@ A simulation consists of:
 Example:
 
 ```python
-simulation.run(
-    days=30
-)
+from hospital_simulator import Scenario, run_scenario
+
+result = run_scenario(Scenario(days=30, seed=0))
 ```
 
 ---
