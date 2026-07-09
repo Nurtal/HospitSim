@@ -2,7 +2,10 @@
 name = "hospital_simulator"
 version = "0.1.0"
 description = "A lightweight, data-driven hospital flow simulation framework based on clinical standards (CIM-10, CCAM)."
-requires-python = ">=3.9"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Nathan Foulquier" }]
+requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6",
 ]

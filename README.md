@@ -387,7 +387,7 @@ The goal is to create a practical bridge between clinical data warehouses and op
 
 # 📜 License
 
-To be defined.
+Released under the [MIT License](LICENSE).
 
 ---
 
