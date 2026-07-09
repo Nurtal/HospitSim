@@ -15,7 +15,7 @@ from __future__ import annotations
 import csv
 import gzip
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from hospital_simulator.patient import Patient
@@ -98,6 +98,28 @@ class OmopDataset:
         return cls(**tables)
 
 
+def _mark_last_visit_death(visits: list[dict], died_person_ids: set[str]) -> None:
+    """Marque ``disposition="Death"`` sur le dernier séjour des personnes décédées.
+
+    Le « dernier » séjour est celui de date de début la plus tardive. Modifie
+    ``visits`` en place.
+    """
+    best: dict[str, tuple] = {}  # person_id -> (start, index)
+    for i, visit in enumerate(visits):
+        pid = str(visit.get("person_id"))
+        if pid not in died_person_ids:
+            continue
+        start = parse_omop_date(visit.get("visit_start_date"))
+        if pid not in best:
+            best[pid] = (start, i)
+            continue
+        cur_start, _ = best[pid]
+        if cur_start is None or (start is not None and start >= cur_start):
+            best[pid] = (start, i)
+    for _, index in best.values():
+        visits[index]["disposition"] = "Death"
+
+
 # Correspondance ENCOUNTERCLASS Synthea -> service simulé.
 SYNTHEA_ENCOUNTER_SERVICE: dict[str, str] = {
     "emergency": "ED",
@@ -147,14 +169,20 @@ def omop_from_synthea_csv(
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
 
+    patient_rows = _read("patients.csv")
     person = [
         {
             "person_id": row.get("Id"),
             "gender_concept_id": "8507" if row.get("GENDER") == "M" else "8532",
             "year_of_birth": (row.get("BIRTHDATE") or "")[:4],
         }
-        for row in _read("patients.csv")
+        for row in patient_rows
     ]
+    death_date = {
+        row.get("Id"): parse_omop_date((row.get("DEATHDATE") or "").strip())
+        for row in patient_rows
+        if (row.get("DEATHDATE") or "").strip()
+    }
 
     visits = []
     for row in _read("encounters.csv"):
@@ -185,6 +213,24 @@ def omop_from_synthea_csv(
         {"person_id": row.get("PATIENT"), "procedure_source_value": row.get("CODE")}
         for row in _read("procedures.csv")
     ]
+
+    # Décès intra-hospitalier : DEATHDATE tombant pendant le dernier séjour aigu.
+    if death_date:
+        last_visit: dict[str, tuple] = {}  # person_id -> (start, end, index)
+        for i, visit in enumerate(visits):
+            pid = visit["person_id"]
+            start = parse_omop_date(visit.get("visit_start_date"))
+            prev = last_visit.get(pid)
+            if prev is None or (start is not None and (prev[0] is None or start >= prev[0])):
+                last_visit[pid] = (start, parse_omop_date(visit.get("visit_end_date")), i)
+        died = set()
+        for pid, (start, end, index) in last_visit.items():
+            dd = death_date.get(pid)
+            if dd is None or start is None or end is None:
+                continue
+            if start.date() <= dd.date() <= end.date() + timedelta(days=1):
+                died.add(pid)
+                visits[index]["disposition"] = "Death"
 
     return OmopDataset(
         person=person,
@@ -292,6 +338,20 @@ def omop_from_mimic(
         procedures.append(
             {"person_id": row.get("subject_id"), "procedure_source_value": row.get("icd_code")}
         )
+
+    # Décès hospitaliers (table admissions) -> disposition "Death" du dernier séjour.
+    died: set[str] = set()
+    for row in _read_mimic_table(directory, "admissions"):
+        subject = row.get("subject_id")
+        hadm = row.get("hadm_id")
+        pid = f"{subject}_{hadm}" if episode_level and hadm else str(subject)
+        flag = str(row.get("hospital_expire_flag") or "").strip()
+        discharge = (row.get("discharge_location") or "").strip().upper()
+        deathtime = (row.get("deathtime") or "").strip()
+        if flag == "1" or discharge == "DIED" or deathtime:
+            died.add(pid)
+    if died:
+        _mark_last_visit_death(visits, died)
 
     return OmopDataset(
         person=person,
@@ -407,7 +467,8 @@ def stays_from_omop(
             renseigné (utile pour distinguer ICU/Ward que le concept ne capture pas).
 
     Returns:
-        Une liste de dicts ``{person_id, service, start, end}``.
+        Une liste de dicts ``{person_id, service, start, end, disposition}``
+        (``disposition`` renseignée pour le dernier séjour d'un décès, sinon None).
     """
     service_map = service_map if service_map is not None else DEFAULT_VISIT_SERVICE_MAP
     stays: list[dict] = []
@@ -426,6 +487,7 @@ def stays_from_omop(
                 "service": service,
                 "start": parse_omop_date(visit.get("visit_start_date")),
                 "end": parse_omop_date(visit.get("visit_end_date")),
+                "disposition": visit.get("disposition"),
             }
         )
     return stays

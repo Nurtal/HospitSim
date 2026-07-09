@@ -48,12 +48,14 @@ def estimate_transition_probabilities(
     Pour chaque patient, on parcourt ses séjours dans l'ordre chronologique et
     on compte les transitions ``service_courant -> service_suivant``. Si
     ``terminal`` est fourni, le dernier séjour de chaque patient compte une
-    transition vers ce devenir terminal (ex: sortie).
+    transition vers un devenir terminal : la valeur ``disposition`` portée par
+    ce dernier séjour (ex: ``"Death"``) si elle existe, sinon ``terminal``
+    (typiquement ``"Discharge"``).
 
     Args:
-        stays: Séjours normalisés ``{person_id, service, start, end}``.
-        terminal: Nom du devenir terminal ajouté en fin de trajectoire, ou None
-            pour ne compter que les transitions observées entre services.
+        stays: Séjours normalisés ``{person_id, service, start, end[, disposition]}``.
+        terminal: Devenir terminal par défaut ajouté en fin de trajectoire, ou
+            None pour ne compter que les transitions observées entre services.
 
     Returns:
         Un dict ``{service_source: {destination: probabilité}}`` normalisé (chaque
@@ -62,13 +64,15 @@ def estimate_transition_probabilities(
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for seq in _sequences_by_person(stays).values():
-        services = [s.get("service") for s in seq if s.get("service")]
+        with_service = [s for s in seq if s.get("service")]
+        services = [s["service"] for s in with_service]
         if not services:
             continue
         for current, nxt in zip(services, services[1:]):
             counts[current][nxt] += 1
         if terminal is not None:
-            counts[services[-1]][terminal] += 1
+            disposition = with_service[-1].get("disposition") or terminal
+            counts[services[-1]][disposition] += 1
 
     probabilities: dict[str, dict[str, float]] = {}
     for source, dest_counts in counts.items():

@@ -154,3 +154,24 @@ class TestProcedureEstimation:
         assert probs["J189"]["intubation"] == pytest.approx(0.5)
         # I500 : 1 patient (le n°1), pas d'intubation
         assert "intubation" not in probs["I500"]
+
+
+# ----- Death modeling (disposition on last stay) -----
+
+
+class TestDeathDisposition:
+    def test_last_stay_death_becomes_terminal(self):
+        stays = [
+            {"person_id": "1", "service": "ED", "start": "2020-01-01", "end": "2020-01-02"},
+            {"person_id": "1", "service": "ICU", "start": "2020-01-02", "end": "2020-01-06",
+             "disposition": "Death"},
+            {"person_id": "2", "service": "ED", "start": "2020-01-01", "end": "2020-01-02"},
+            {"person_id": "2", "service": "ICU", "start": "2020-01-02", "end": "2020-01-05"},
+        ]
+        probs = estimate_transition_probabilities(stays)
+        # ICU : patient 1 meurt, patient 2 sort -> 50% Death, 50% Discharge
+        assert probs["ICU"] == {"Death": 0.5, "Discharge": 0.5}
+
+    def test_no_disposition_defaults_to_discharge(self):
+        stays = [{"person_id": "1", "service": "Ward", "start": "2020-01-01", "end": "2020-01-05"}]
+        assert estimate_transition_probabilities(stays)["Ward"] == {"Discharge": 1.0}

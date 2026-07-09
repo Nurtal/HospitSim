@@ -278,7 +278,7 @@ def build_report(source, dataset, scenario, context, seed, n_reps) -> str:
     else:
         lines.append("    (pas assez de données par service)")
 
-    metrics = ["admissions", "blocked_transfers", "deaths"]
+    metrics = ["admissions", "blocked_transfers", "deaths", "mortality_rate"]
     for svc in scenario.service_capacities:
         metrics.append(f"{svc}.mean_occupancy_rate")
     lines += ["", "-" * 64, "Scénario BASELINE"]

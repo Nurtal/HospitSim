@@ -71,6 +71,12 @@ def _make_mimic(tmp_path):
             {"subject_id": "10", "hadm_id": "100", "seq_num": "3", "icd_code": "486", "icd_version": "9"},
         ],
     )
+    _write_csv(
+        hosp / "admissions.csv",
+        ["subject_id", "hadm_id", "hospital_expire_flag", "discharge_location", "deathtime"],
+        [{"subject_id": "10", "hadm_id": "100", "hospital_expire_flag": "1",
+          "discharge_location": "DIED", "deathtime": "2180-01-09 12:00:00"}],
+    )
     return tmp_path
 
 
@@ -85,7 +91,15 @@ def test_mimic_intra_hospital_transitions(tmp_path):
     trans = estimate_transition_probabilities(stays)
     assert trans["ED"] == {"ICU": 1.0}       # ED -> MICU
     assert trans["ICU"] == {"Ward": 1.0}     # MICU -> Medicine
-    assert trans["Ward"] == {"Discharge": 1.0}  # sortie terminale
+    # Décès hospitalier (admissions) -> dernier séjour (Ward) terminal en Death.
+    assert trans["Ward"] == {"Death": 1.0}
+
+
+def test_mimic_death_marked_on_last_stay(tmp_path):
+    ds = omop_from_mimic(_make_mimic(tmp_path))
+    stays = stays_from_omop(ds)
+    ward = [s for s in stays if s["service"] == "Ward"][0]
+    assert ward["disposition"] == "Death"
 
 
 def test_mimic_diagnoses_icd10_only_and_primary(tmp_path):

@@ -15,9 +15,9 @@ def _write_csv(path, fieldnames, rows):
 def _make_synthea_dir(tmp_path):
     _write_csv(
         tmp_path / "patients.csv",
-        ["Id", "BIRTHDATE", "GENDER"],
-        [{"Id": "p1", "BIRTHDATE": "1950-06-01", "GENDER": "F"},
-         {"Id": "p2", "BIRTHDATE": "1980-01-01", "GENDER": "M"}],
+        ["Id", "BIRTHDATE", "DEATHDATE", "GENDER"],
+        [{"Id": "p1", "BIRTHDATE": "1950-06-01", "DEATHDATE": "2020-01-06", "GENDER": "F"},
+         {"Id": "p2", "BIRTHDATE": "1980-01-01", "DEATHDATE": "", "GENDER": "M"}],
     )
     _write_csv(
         tmp_path / "encounters.csv",
@@ -51,6 +51,17 @@ def test_demographics_mapped(tmp_path):
     patients = {p.id: p for p in patients_from_omop(ds, reference_year=2020)}
     assert patients["omop-p1"].sexe == "F"
     assert patients["omop-p1"].age == 70  # 2020 - 1950
+
+
+def test_in_hospital_death_marked(tmp_path):
+    # p1 meurt le 2020-01-06, pendant son séjour inpatient (2020-01-01 -> 2020-01-06).
+    ds = omop_from_synthea_csv(_make_synthea_dir(tmp_path))
+    stays = stays_from_omop(ds)
+    p1_last = max((s for s in stays if s["person_id"] == "p1"), key=lambda s: s["start"])
+    assert p1_last["service"] == "Ward"
+    assert p1_last["disposition"] == "Death"
+    # p2 n'a pas de date de décès -> aucune disposition Death.
+    assert all(s.get("disposition") != "Death" for s in stays if s["person_id"] == "p2")
 
 
 def test_iso_z_timestamps_give_positive_los(tmp_path):

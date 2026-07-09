@@ -69,6 +69,14 @@ Three pillars, matching JMIR's implicit **Develop → Demonstrate → Evaluate**
       the `hosp/` layout. **(Still to do: run on the real credentialed MIMIC-IV
       extract and report those numbers; occupancy validation vs held-out
       period.)**
+- [x] **Death/disposition modeling**: the last stay of a fatal episode is marked
+      `disposition="Death"` (MIMIC `admissions.hospital_expire_flag`/
+      `discharge_location`/`deathtime`; Synthea `DEATHDATE` falling within the
+      last acute encounter), and `estimate_transition_probabilities` uses the
+      per-episode disposition — so calibrated routing carries per-service
+      mortality and the twin reports a mortality rate with CIs (validated on a
+      fixture: recovers ICU→Death 0.27 vs 0.30 ground truth, overall mortality
+      0.203 [0.192, 0.213] for 20.5% observed).
 - [x] **Sensitivity analysis tooling**: `sensitivity_sweep()` sweeps one
       parameter (arrival rate, ICU capacity, mean LOS…) and reports each
       indicator vs parameter with 95% CIs. *(Still to do: run it on the real
