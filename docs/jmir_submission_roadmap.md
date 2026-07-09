@@ -53,18 +53,20 @@ Three pillars, matching JMIR's implicit **Develop → Demonstrate → Evaluate**
 - [ ] **Validation**: compare simulated vs observed distributions of
       length-of-stay and service occupancy (KS test / mean-absolute-error), and
       cross-check transition probabilities vs the data. Report figures + metrics.
-- [ ] **Sensitivity analysis**: one-parameter sweeps (arrival rate, ICU capacity,
-      mean LOS) reporting an indicator vs parameter, with CIs. (Needs a small
-      `sensitivity_sweep` helper — not yet built.)
+- [x] **Sensitivity analysis tooling**: `sensitivity_sweep()` sweeps one
+      parameter (arrival rate, ICU capacity, mean LOS…) and reports each
+      indicator vs parameter with 95% CIs. *(Still to do: run it on the real
+      dataset and interpret.)*
 
 ### Phase B — Experiments / results (~1–2 weeks)
 - [ ] Define 2–3 what-if scenarios mirroring the README use cases
       (+X% respiratory admissions; −Y% ICU beds; epidemic wave).
 - [ ] Run each with `run_replications` (n ≥ 30), report stress indicators with
       95% CIs; highlight non-overlapping CIs as the key finding.
-- [ ] Produce publication-quality figures (occupancy time series with CI bands,
-      indicator-vs-parameter curves). Add a `matplotlib` renderer behind the
-      existing `viz` extra.
+- [x] **Figure tooling** (`hospital_simulator/plotting.py`, behind `viz` extra):
+      `plot_sensitivity` (CI band), `plot_occupancy` (time series + capacity +
+      warm-up), `plot_stress`. *(Still to do: generate the final paper figures
+      from the real-data runs.)*
 
 ### Phase C — Reproducibility & artifacts (~few days)
 - [ ] Tag a release; mint a **Zenodo DOI**; add "Data and Code Availability".
@@ -160,9 +162,8 @@ D (2–3w) → E (1w). Plan for one revision round after submission.
 ---
 
 ## 9. Immediate next actions (this repo)
-1. `sensitivity_sweep()` helper in `scenario.py` (vary one parameter, return
-   indicator + CI per value).
-2. Optional `matplotlib` figure renderer behind the `viz` extra.
-3. Synthea→OMOP ETL notebook under `notebooks/`.
+1. ~~`sensitivity_sweep()` helper in `scenario.py`.~~ ✅ done
+2. ~~`matplotlib` figure renderer behind the `viz` extra.~~ ✅ done (`plotting.py`)
+3. Synthea→OMOP ETL notebook under `notebooks/`. **(next — Phase A blocker)**
 4. Fix stale README API examples + add Quickstart.
 5. Tag release + Zenodo DOI once Phase A/B results exist.
