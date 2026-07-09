@@ -46,13 +46,18 @@ Three pillars, matching JMIR's implicit **Develop → Demonstrate → Evaluate**
 ## 3. Phased work plan
 
 ### Phase A — Data & validation (highest priority, ~2–3 weeks)
-- [ ] Pick the demonstration dataset. Recommended: **Synthea → OMOP** (fully
-      open, no IRB/GDPR friction). Fallback: MIMIC-IV (needs credentialing).
-- [ ] Build a reproducible ETL notebook: dataset → OMOP tables → `patients_from_omop`,
-      `stays_from_omop`, `estimate_*`.
-- [ ] **Validation**: compare simulated vs observed distributions of
-      length-of-stay and service occupancy (KS test / mean-absolute-error), and
-      cross-check transition probabilities vs the data. Report figures + metrics.
+- [x] Demonstration dataset chosen: **Synthea → OMOP** (open, no IRB/GDPR).
+      Optional stretch: also run on MIMIC-IV.
+- [x] Reproducible ETL: `examples/synthea_omop_etl.py` +
+      `notebooks/synthea_omop_calibration.ipynb` (dataset → OMOP tables →
+      `patients_from_omop` / `stays_from_omop` / `estimate_*`), with a
+      self-contained synthetic fallback. **(Still to do: run on a real Synthea
+      OMOP export and report those numbers.)**
+- [x] **Validation tooling**: `validation.py` KS tests; `ks_exponential()`
+      checks the LOS assumption against observed durations (on synthetic data:
+      transitions recovered exactly, exponential fit not rejected, p>0.05).
+      **(Still to do: validation on real data; add occupancy validation vs a
+      held-out period.)**
 - [x] **Sensitivity analysis tooling**: `sensitivity_sweep()` sweeps one
       parameter (arrival rate, ICU capacity, mean LOS…) and reports each
       indicator vs parameter with 95% CIs. *(Still to do: run it on the real
@@ -164,6 +169,9 @@ D (2–3w) → E (1w). Plan for one revision round after submission.
 ## 9. Immediate next actions (this repo)
 1. ~~`sensitivity_sweep()` helper in `scenario.py`.~~ ✅ done
 2. ~~`matplotlib` figure renderer behind the `viz` extra.~~ ✅ done (`plotting.py`)
-3. Synthea→OMOP ETL notebook under `notebooks/`. **(next — Phase A blocker)**
-4. Fix stale README API examples + add Quickstart.
+3. ~~Synthea→OMOP ETL notebook under `notebooks/`.~~ ✅ done (tooling + synthetic
+   fallback). **Next: run on a real Synthea OMOP export and report the numbers.**
+4. ~~Fix stale README API examples + add Quickstart.~~ ✅ done
 5. Tag release + Zenodo DOI once Phase A/B results exist.
+6. Occupancy validation vs a held-out period; consider heavier-tailed LOS if the
+   exponential KS test rejects on real data.
