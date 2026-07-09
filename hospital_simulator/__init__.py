@@ -20,6 +20,19 @@ from hospital_simulator.pathways import (
     load_pathways_from_dict,
     load_pathways_from_string,
 )
+from hospital_simulator.omop import (
+    OmopDataset,
+    patients_from_omop,
+    stays_from_omop,
+    conditions_from_omop,
+    procedures_from_omop,
+)
+from hospital_simulator.calibration import (
+    estimate_transition_probabilities,
+    estimate_length_of_stay,
+    estimate_procedure_probabilities,
+    build_pathway_from_transitions,
+)
 
 __all__ = [
     "Patient",
@@ -41,4 +54,13 @@ __all__ = [
     "load_pathways",
     "load_pathways_from_dict",
     "load_pathways_from_string",
+    "OmopDataset",
+    "patients_from_omop",
+    "stays_from_omop",
+    "conditions_from_omop",
+    "procedures_from_omop",
+    "estimate_transition_probabilities",
+    "estimate_length_of_stay",
+    "estimate_procedure_probabilities",
+    "build_pathway_from_transitions",
 ]

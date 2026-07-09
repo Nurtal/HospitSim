@@ -358,10 +358,10 @@ hdts/
 
 ## Phase 3 — Data-driven calibration
 
-* [ ] OMOP import
-* [ ] Transition probability estimation
-* [ ] Length of stay estimation
-* [ ] Procedure probability estimation
+* [x] OMOP import
+* [x] Transition probability estimation
+* [x] Length of stay estimation
+* [x] Procedure probability estimation
 
 ## Phase 4 — Digital twin experiments
 
