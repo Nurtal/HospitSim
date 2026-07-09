@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 import random
+import statistics
 from dataclasses import dataclass, field, replace
 
 # Devenirs terminaux (le patient quitte l'hôpital).
@@ -73,6 +74,7 @@ class Scenario:
         routing: Probabilités de transition ``{service: {destination: proba}}``.
         mean_los_days: Durée moyenne de séjour par service (jours).
         default_los_days: DMS par défaut pour un service non listé.
+        warmup_days: Jours de chauffe (transitoire) exclus des indicateurs.
         seed: Graine du générateur aléatoire (reproductibilité).
     """
 
@@ -86,6 +88,7 @@ class Scenario:
     routing: dict[str, dict[str, float]] = field(default_factory=_default_routing)
     mean_los_days: dict[str, float] = field(default_factory=_default_mean_los)
     default_los_days: float = 3.0
+    warmup_days: int = 0
     seed: int | None = None
 
     def effective_capacity(self, service: str) -> int:
@@ -140,24 +143,34 @@ class SimulationResult:
     scenario: Scenario
     daily_records: list[dict] = field(default_factory=list)
 
+    def analysis_records(self) -> list[dict]:
+        """Enregistrements journaliers hors période de chauffe (warm-up)."""
+        warmup = max(0, self.scenario.warmup_days)
+        records = self.daily_records[warmup:]
+        # Si la chauffe couvre toute la simulation, on retombe sur la trace complète.
+        return records or self.daily_records
+
     def total(self, key: str) -> int:
-        """Somme d'une métrique de flux sur toute la simulation."""
-        return sum(record.get(key, 0) for record in self.daily_records)
+        """Somme d'une métrique de flux (hors chauffe)."""
+        return sum(record.get(key, 0) for record in self.analysis_records())
 
     def stress_indicators(self) -> dict:
         """Calcule les indicateurs de stress hospitalier de la simulation.
+
+        Les indicateurs sont calculés sur la fenêtre d'analyse (période de chauffe
+        ``warmup_days`` exclue).
 
         Returns:
             Un dict comprenant les totaux de flux, la mortalité, les files
             d'attente, et par service : occupation moyenne/pic (absolue et en %)
             ainsi que le nombre de jours de saturation.
         """
+        records = self.analysis_records()
         services = list(self.scenario.service_capacities)
         per_service: dict[str, dict[str, float]] = {}
         for svc in services:
             capacity = self.scenario.effective_capacity(svc)
-            occupancies = [rec["occupancy"].get(svc, 0) for rec in self.daily_records]
-            occupancies = occupancies or [0]
+            occupancies = [rec["occupancy"].get(svc, 0) for rec in records] or [0]
             peak = max(occupancies)
             mean = sum(occupancies) / len(occupancies)
             saturation_days = sum(
@@ -175,11 +188,11 @@ class SimulationResult:
         deaths = self.total("deaths")
         discharges = self.total("discharges")
         exits = deaths + discharges
-        waitings = [rec["waiting"] for rec in self.daily_records] or [0]
+        waitings = [rec["waiting"] for rec in records] or [0]
 
         return {
             "scenario": self.scenario.name,
-            "days": self.scenario.days,
+            "days": len(records),
             "arrivals": self.total("arrivals"),
             "admissions": self.total("admissions"),
             "discharges": discharges,
@@ -290,3 +303,137 @@ class SimulationEngine:
 def run_scenario(scenario: Scenario) -> SimulationResult:
     """Raccourci : instancie le moteur et exécute le scénario."""
     return SimulationEngine(scenario).run()
+
+
+# --- Multi-réplications et intervalles de confiance (Phase 4 / rigueur stochastique) ---
+
+# Métriques de flux agrégées reportées par réplication.
+_FLOW_METRICS = (
+    "arrivals",
+    "admissions",
+    "discharges",
+    "deaths",
+    "blocked_transfers",
+    "mortality_rate",
+    "peak_waiting",
+    "mean_waiting",
+)
+# Métriques par service reportées par réplication.
+_SERVICE_METRICS = (
+    "mean_occupancy",
+    "peak_occupancy",
+    "mean_occupancy_rate",
+    "peak_occupancy_rate",
+    "saturation_days",
+)
+
+
+def _flatten_indicators(indicators: dict) -> dict[str, float]:
+    """Aplati un dict d'indicateurs en un dict plat ``metric -> valeur``."""
+    flat: dict[str, float] = {m: indicators[m] for m in _FLOW_METRICS}
+    for service, stats in indicators["services"].items():
+        for metric in _SERVICE_METRICS:
+            flat[f"{service}.{metric}"] = stats[metric]
+    return flat
+
+
+@dataclass
+class ReplicatedResult:
+    """Résultats de plusieurs réplications indépendantes d'un même scénario."""
+
+    scenario: Scenario
+    runs: list[dict] = field(default_factory=list)
+
+    @property
+    def n_replications(self) -> int:
+        return len(self.runs)
+
+    def summary(self, confidence: float = 0.95) -> dict[str, dict[str, float]]:
+        """Agrège les réplications : moyenne, écart-type et intervalle de confiance.
+
+        L'intervalle de confiance utilise une approximation normale
+        (``moyenne ± z · erreur-type``) ; prévoir n ≳ 30 réplications pour une
+        bonne validité. Avec une seule réplication, l'IC se réduit à la moyenne.
+
+        Args:
+            confidence: Niveau de confiance de l'IC (défaut 0.95).
+
+        Returns:
+            Un dict ``metric -> {mean, std, sem, ci_low, ci_high, n, confidence}``.
+        """
+        if not 0.0 < confidence < 1.0:
+            raise ValueError("confidence doit être dans ]0, 1[.")
+        if not self.runs:
+            return {}
+
+        flats = [_flatten_indicators(run) for run in self.runs]
+        z = statistics.NormalDist().inv_cdf(1.0 - (1.0 - confidence) / 2.0)
+
+        summary: dict[str, dict[str, float]] = {}
+        for metric in flats[0]:
+            values = [flat[metric] for flat in flats]
+            n = len(values)
+            mean = statistics.fmean(values)
+            std = statistics.stdev(values) if n > 1 else 0.0
+            sem = std / math.sqrt(n) if n > 1 else 0.0
+            margin = z * sem
+            summary[metric] = {
+                "mean": round(mean, 4),
+                "std": round(std, 4),
+                "sem": round(sem, 4),
+                "ci_low": round(mean - margin, 4),
+                "ci_high": round(mean + margin, 4),
+                "n": n,
+                "confidence": confidence,
+            }
+        return summary
+
+    def render_summary(self, confidence: float = 0.95, metrics: list[str] | None = None) -> str:
+        """Rend un tableau texte des métriques agrégées avec IC (pour un article)."""
+        stats = self.summary(confidence=confidence)
+        keys = metrics if metrics is not None else list(stats)
+        header = (
+            f"Scénario '{self.scenario.name}' — {self.n_replications} réplications "
+            f"(IC {int(confidence * 100)}%)"
+        )
+        lines = [header, "-" * len(header)]
+        width = max((len(k) for k in keys), default=0)
+        for key in keys:
+            s = stats[key]
+            lines.append(
+                f"  {key:>{width}} : {s['mean']:>10.3f}  [{s['ci_low']:.3f}, {s['ci_high']:.3f}]"
+            )
+        return "\n".join(lines)
+
+
+def run_replications(
+    scenario: Scenario,
+    n_replications: int,
+    *,
+    base_seed: int | None = None,
+) -> ReplicatedResult:
+    """Exécute ``n_replications`` réplications indépendantes et reproductibles.
+
+    Chaque réplication utilise une graine distincte dérivée de ``base_seed``
+    (ou de ``scenario.seed``, ou 0), garantissant des résultats identiques d'un
+    appel à l'autre pour un même ``base_seed``.
+
+    Args:
+        scenario: Le scénario à répliquer.
+        n_replications: Nombre de réplications (>= 1).
+        base_seed: Graine de base ; par défaut ``scenario.seed`` sinon 0.
+
+    Returns:
+        Un :class:`ReplicatedResult` rassemblant les indicateurs de chaque run.
+    """
+    if n_replications < 1:
+        raise ValueError("n_replications doit être >= 1.")
+
+    if base_seed is None:
+        base_seed = scenario.seed if scenario.seed is not None else 0
+
+    runs = [
+        run_scenario(replace(scenario, seed=base_seed + i)).stress_indicators()
+        for i in range(n_replications)
+    ]
+    return ReplicatedResult(scenario=scenario, runs=runs)

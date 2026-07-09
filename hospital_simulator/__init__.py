@@ -42,7 +42,9 @@ from hospital_simulator.scenario import (
     Scenario,
     SimulationEngine,
     SimulationResult,
+    ReplicatedResult,
     run_scenario,
+    run_replications,
 )
 
 __all__ = [
@@ -79,5 +81,7 @@ __all__ = [
     "Scenario",
     "SimulationEngine",
     "SimulationResult",
+    "ReplicatedResult",
     "run_scenario",
+    "run_replications",
 ]
