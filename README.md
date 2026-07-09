@@ -455,6 +455,100 @@ hdts/
 
 ---
 
+# 🔬 Validation & publication roadmap (JMIR Medical Informatics)
+
+**Target:** JMIR Medical Informatics — an Original Paper framed as a
+**development-and-validation study** of a minimal, reproducible, OMOP-fed
+hospital digital twin.
+
+**Story.** A small, turnkey tool that plugs into a hospital **clinical data
+warehouse (EDS)**, calibrates itself from routine data, and simulates "what-if"
+scenarios from a set of initial conditions and simple rules. The study answers a
+concrete capacity question on a **real EDS**, validates the tool against observed
+reality, and is fully reproducible on the open **MIMIC-IV** dataset.
+
+**Framing (fit-for-purpose).** The model is *deliberately* simple (Poisson
+arrivals, exponential length of stay, Markov transitions, bed-blocking). It is
+validated as **decision-support for directional capacity questions with
+quantified uncertainty — not as a high-fidelity point predictor.** Validation
+follows recognized frameworks: **Sargent** (V&V), **ISPOR-SMDM** (modeling good
+research practices), reported per **STRESS-DES**.
+
+## Validation ladder
+
+| Level | Question | Status |
+|---|---|---|
+| Verification | Does the code implement the equations? | ✅ 153 tests, deterministic seeds |
+| Recovery | Does calibration recover known parameters? | ✅ synthetic ground truth |
+| Input validity | Do estimated params match the data (train/test)? | ⏳ V1/V2 |
+| Assumption audit | Do Poisson / exponential / Markov hold? | ◐ KS on LOS done; extend |
+| Operational validity | Does the simulated system reproduce observed outputs? | ⏳ V2 (core) |
+| Predictive validity | Does it predict a *real* change (natural experiment)? | ⏳ V4 (COVID) |
+| Sensitivity / cross-model | Robust? Consistent with an M/M/c queue? | ◐ sweeps done; add M/M/c |
+
+## Phases
+
+### Phase V0 — Foundations ✅
+- [x] Simulation engine, OMOP calibration, Synthea/MIMIC-IV adapters, death
+      modeling, multi-replication confidence intervals, sensitivity sweeps,
+      figures, standalone `hdts.py`, 153 tests.
+
+### Phase V1 — Validation tooling
+- [ ] `validation`: **CI-coverage** of observed daily census vs simulated 95% band.
+- [ ] Point-error metrics: MAE / MAPE / bias on mean occupancy, peak census,
+      bed-days, mortality rate.
+- [ ] Distributional: KS + **Wasserstein** distance on per-unit LOS.
+- [ ] **Arrival process test** (Poisson dispersion index var/mean ≈ 1).
+- [ ] **Markov order-1 check** (order-1 vs order-2 transition fit).
+- [ ] Temporal **hold-out** harness (train window N → test window N+1).
+
+### Phase V2 — Operational validation on MIMIC-IV (reproducible backbone)
+- [ ] Calibrate on a training window; simulate; compare simulated vs observed:
+      census/occupancy (CI coverage), LOS (KS/Wasserstein), bed-days, mortality.
+- [ ] Report in-sample and out-of-sample (temporal hold-out) results.
+- [ ] Public, re-runnable notebook so third parties reproduce the numbers.
+
+### Phase V3 — Real EDS case study
+- [ ] Extract an OMOP cohort from the EDS (chosen units, time window).
+- [ ] Frame a concrete operational question (e.g., ICU/ward capacity, surge).
+- [ ] Calibrate + validate outputs against the EDS (same metrics as V2).
+
+### Phase V4 — Predictive validation: COVID-19 natural experiment (the headline)
+- [ ] Calibrate on the **pre-COVID** period.
+- [ ] Run the surge what-if corresponding to the observed 2020–2022 wave.
+- [ ] Compare **predicted vs observed** stress (peak occupancy, saturation days,
+      mortality) — observed values within the model's CI = predictive validation
+      of the what-if capability.
+
+### Phase V5 — Assumption audit, sensitivity, face validity
+- [ ] Assumption audit section (arrivals/LOS/Markov) → documents the operating
+      envelope and motivates future extensions (log-normal / phase-type LOS).
+- [ ] Sensitivity analysis of conclusions (parameter sweeps with CIs).
+- [ ] **Face validity**: 2–3 clinicians / bed managers rate plausibility and
+      usefulness of the dashboard/indicators (short Likert + qualitative).
+
+### Phase V6 — Manuscript & submission
+- [ ] IMRaD + structured abstract; report per STRESS-DES.
+- [ ] Tag release + **Zenodo DOI**; data/code availability statement.
+- [ ] Submit to JMIR Medical Informatics (budget the APC; ethics note: EDS
+      governance / MIMIC-IV DUA).
+
+## Key validation metrics
+Census **CI-coverage %**, LOS **KS D / p** and **Wasserstein**, arrival
+**dispersion index**, occupancy/bed-days/mortality **MAE·MAPE·bias**,
+temporal-holdout error, what-if **non-overlapping CIs**, COVID back-test
+**predicted-vs-observed within CI**.
+
+## Headline figures
+1. Observed daily census overlaid on the simulated 95% CI band (coverage %).
+2. COVID back-test: predicted vs observed surge stress indicators.
+3. Sensitivity dose–response curves (e.g. ICU beds → blocked transfers) with CIs.
+
+> A more detailed working plan lives in
+> [`docs/jmir_submission_roadmap.md`](docs/jmir_submission_roadmap.md).
+
+---
+
 # 🔬 Scientific positioning
 
 This project explores the concept of a lightweight healthcare digital twin based on:

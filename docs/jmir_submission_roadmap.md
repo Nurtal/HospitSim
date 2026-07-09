@@ -1,9 +1,15 @@
 # Roadmap — Submission to JMIR Medical Informatics
 
+> The **validation & publication roadmap** (study angle: real EDS + COVID-19
+> natural experiment, validated against reality, reproducible on MIMIC-IV) is
+> summarized in the project [README](../README.md#-validation--publication-roadmap-jmir-medical-informatics).
+> This file holds the more detailed working plan.
+
 Target venue: **JMIR Medical Informatics** (open access, peer-reviewed,
 health/medical informatics). Article type: **Original Paper** framed as a
-*development-and-evaluation* study of a reproducible, OMOP-calibrated hospital
-digital-twin simulator.
+**development-and-validation** study of a reproducible, OMOP-calibrated hospital
+digital-twin simulator, evaluated on a real clinical data warehouse (EDS) with a
+COVID-19 natural experiment.
 
 > Status of the software as of 2026-07: functional 4-phase framework, 114 tests,
 > stochastic rigor (multi-replication CIs) in place, self-contained OMOP demo.
