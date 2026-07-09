@@ -1,0 +1,22 @@
+[project]
+name = "hospital_simulator"
+version = "0.1.0"
+description = "A lightweight, data-driven hospital flow simulation framework based on clinical standards (CIM-10, CCAM)."
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+viz = [
+    "matplotlib>=3",
+    "numpy>=1.24",
+]
+test = [
+    "pytest>=7",
+]
+dev = ["hospital_simulator[viz,test]"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

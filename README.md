@@ -343,11 +343,11 @@ hdts/
 
 ## Phase 1 — Minimal simulator
 
-* [ ] Patient object
-* [ ] Hospital services
-* [ ] Basic patient routing
-* [ ] Event simulation
-* [ ] Simple visualization
+* [x] Patient object
+* [x] Hospital services
+* [x] Basic patient routing
+* [x] Event simulation
+* [x] Simple visualization
 
 ## Phase 2 — Clinical modeling
 
