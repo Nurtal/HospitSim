@@ -43,6 +43,7 @@ from hospital_simulator import (  # noqa: E402
     estimate_transition_probabilities,
     ks_exponential,
     length_of_stay_samples,
+    omop_from_mimic,
     omop_from_synthea_csv,
     patients_from_omop,
     peak_concurrency,
@@ -136,6 +137,10 @@ def generate_synthetic(n_patients: int, seed: int) -> OmopDataset:
 
 def obtain_dataset(args) -> tuple[OmopDataset, str]:
     """Résout la source de données selon les options ; renvoie (dataset, description)."""
+    if args.mimic_dir:
+        _log(f"Chargement de MIMIC-IV depuis {args.mimic_dir}")
+        return omop_from_mimic(args.mimic_dir), f"MIMIC-IV ({args.mimic_dir})"
+
     if args.omop_dir:
         _log(f"Chargement de l'OMOP depuis {args.omop_dir}")
         return OmopDataset.from_dir(args.omop_dir), f"OMOP réel ({args.omop_dir})"
@@ -315,6 +320,7 @@ def main(argv=None) -> int:
     parser.add_argument("--replications", type=int, default=40, help="Réplications par scénario.")
     parser.add_argument("--output", type=Path, default=Path("hdts_output"), help="Dossier de sortie.")
     parser.add_argument("--omop-dir", type=str, default=None, help="Dossier de CSV OMOP existants.")
+    parser.add_argument("--mimic-dir", type=str, default=None, help="Racine d'un extrait MIMIC-IV (CSV/CSV.gz).")
     parser.add_argument("--synthea-jar", type=str, default=None, help="Chemin du jar Synthea.")
     parser.add_argument("--no-synthea", action="store_true", help="Force le générateur synthétique.")
     parser.add_argument("--figures", action="store_true", help="Génère des figures PNG (extra 'viz').")

@@ -13,6 +13,7 @@ que de faire échouer tout l'import.
 from __future__ import annotations
 
 import csv
+import gzip
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -184,6 +185,113 @@ def omop_from_synthea_csv(
         {"person_id": row.get("PATIENT"), "procedure_source_value": row.get("CODE")}
         for row in _read("procedures.csv")
     ]
+
+    return OmopDataset(
+        person=person,
+        condition_occurrence=conditions,
+        visit_occurrence=visits,
+        procedure_occurrence=procedures,
+    )
+
+
+def classify_mimic_careunit(careunit: str) -> str:
+    """Classe une unité de soins MIMIC-IV en service simulé (ED / ICU / Ward)."""
+    name = (careunit or "").lower()
+    if "emergency" in name:
+        return "ED"
+    if "intensive care" in name or "icu" in name or "ccu" in name:
+        return "ICU"
+    return "Ward"
+
+
+def _read_mimic_table(directory: Path, base: str) -> list[dict]:
+    """Lit une table MIMIC (``{base}.csv`` ou ``{base}.csv.gz``, cherchée récursivement)."""
+    for pattern in (f"{base}.csv", f"{base}.csv.gz"):
+        for path in sorted(directory.rglob(pattern)):
+            if path.suffix == ".gz":
+                with gzip.open(path, "rt", newline="", encoding="utf-8") as handle:
+                    return list(csv.DictReader(handle))
+            with path.open(newline="", encoding="utf-8") as handle:
+                return list(csv.DictReader(handle))
+    return []
+
+
+def omop_from_mimic(
+    directory: str | Path,
+    *,
+    episode_level: bool = True,
+    careunit_classifier=classify_mimic_careunit,
+) -> OmopDataset:
+    """Construit un OmopDataset à partir d'un extrait **MIMIC-IV** (CSV ou CSV.gz).
+
+    MIMIC-IV décrit les transferts intra-hospitaliers (table ``transfers`` :
+    ``careunit`` + ``intime``/``outtime``), ce qui permet de calibrer de vraies
+    transitions ED → ICU → ward, et fournit des diagnostics en **CIM-10**
+    (``diagnoses_icd``, ``icd_version == 10``).
+
+    Tables attendues (dans le dossier ou un sous-dossier ``hosp/`` / ``icu/``) :
+    ``patients``, ``transfers``, ``diagnoses_icd``, ``procedures_icd``.
+
+    Args:
+        directory: Racine de l'extrait MIMIC-IV.
+        episode_level: si True (défaut), chaque **admission** (``hadm_id``) est
+            traitée comme une trajectoire distincte — ``person_id`` des séjours =
+            ``"{subject_id}_{hadm_id}"`` — afin d'obtenir des transitions
+            intra-hospitalières propres (plutôt que de chaîner des séjours de
+            différentes hospitalisations).
+        careunit_classifier: fonction ``careunit -> service``.
+    """
+    directory = Path(directory)
+
+    person = []
+    for row in _read_mimic_table(directory, "patients"):
+        yob = None
+        anchor_age = _as_int(row.get("anchor_age"))
+        anchor_year = _as_int(row.get("anchor_year"))
+        if anchor_age is not None and anchor_year is not None:
+            yob = anchor_year - anchor_age
+        person.append(
+            {
+                "person_id": row.get("subject_id"),
+                "gender_concept_id": "8507" if row.get("gender") == "M" else "8532",
+                "year_of_birth": str(yob) if yob is not None else "",
+            }
+        )
+
+    visits = []
+    for row in _read_mimic_table(directory, "transfers"):
+        careunit = row.get("careunit")
+        if not careunit or (row.get("eventtype") or "").lower() == "discharge":
+            continue
+        subject = row.get("subject_id")
+        hadm = row.get("hadm_id")
+        person_id = f"{subject}_{hadm}" if episode_level and hadm else subject
+        visits.append(
+            {
+                "person_id": person_id,
+                "visit_source_value": careunit_classifier(careunit),
+                "visit_start_date": row.get("intime"),
+                "visit_end_date": row.get("outtime"),
+            }
+        )
+
+    conditions = []
+    for row in _read_mimic_table(directory, "diagnoses_icd"):
+        if str(row.get("icd_version")) != "10":  # on ne garde que la CIM-10
+            continue
+        conditions.append(
+            {
+                "person_id": row.get("subject_id"),
+                "condition_source_value": row.get("icd_code"),
+                "condition_status_source_value": "primary" if str(row.get("seq_num")) == "1" else "",
+            }
+        )
+
+    procedures = []
+    for row in _read_mimic_table(directory, "procedures_icd"):
+        procedures.append(
+            {"person_id": row.get("subject_id"), "procedure_source_value": row.get("icd_code")}
+        )
 
     return OmopDataset(
         person=person,

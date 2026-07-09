@@ -92,11 +92,19 @@ what-if scenario with confidence intervals — writing a report (and optional
 figures):
 
 ```bash
-python hdts.py                       # Synthea if available, else synthetic fallback
+python hdts.py                        # Synthea if available, else synthetic fallback
 python hdts.py --patients 2000 --figures
-python hdts.py --omop-dir /data/omop # start from existing OMOP CSVs
-python hdts.py --no-synthea          # force the synthetic generator
+python hdts.py --omop-dir /data/omop  # start from existing OMOP CSVs
+python hdts.py --mimic-dir /data/mimiciv  # calibrate from MIMIC-IV (real ICU/ward transfers)
+python hdts.py --no-synthea           # force the synthetic generator
 ```
+
+**Data sources.** Synthea is convenient but models lifelong care and no
+intra-hospital ICU/ward transfers, so its transitions are coarse. **MIMIC-IV**
+(`--mimic-dir`, credentialed access via PhysioNet) has real per-unit stays
+(`transfers` table) and ICD-10 diagnoses, and is the recommended source for
+intra-hospital transition/length-of-stay calibration; admissions are treated as
+episodes (`hadm_id`) to recover clean ED → ICU → ward pathways.
 
 ---
 

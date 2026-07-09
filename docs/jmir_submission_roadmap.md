@@ -61,7 +61,13 @@ Three pillars, matching JMIR's implicit **Develop → Demonstrate → Evaluate**
       heavier-tailed LOS. Caveat: Synthea models lifelong care and no
       intra-hospital ICU/ward transfers, so its transitions are coarse
       (ED→ED inflated); **MIMIC-IV is the better dataset for the transition/LOS
-      story.** **(Still to do: MIMIC-IV run; occupancy validation vs held-out
+      story.**
+- [x] **MIMIC-IV adapter** (`omop_from_mimic`, `hdts.py --mimic-dir`): maps the
+      `transfers` table (careunit → ED/ICU/Ward, per-unit intime/outtime) and
+      ICD-10 `diagnoses_icd`, grouping by admission (`hadm_id`) to recover clean
+      intra-hospital ED → ICU → ward transitions. Handles `.csv`/`.csv.gz` and
+      the `hosp/` layout. **(Still to do: run on the real credentialed MIMIC-IV
+      extract and report those numbers; occupancy validation vs held-out
       period.)**
 - [x] **Sensitivity analysis tooling**: `sensitivity_sweep()` sweeps one
       parameter (arrival rate, ICU capacity, mean LOS…) and reports each
