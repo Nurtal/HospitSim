@@ -60,8 +60,11 @@ def parse_omop_date(value: object) -> datetime | None:
         return value
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day)
+    text = str(value)
+    if text.endswith("Z"):  # horodatages ISO type Synthea ("2020-01-01T10:00:00Z")
+        text = text[:-1] + "+00:00"
     try:
-        return datetime.fromisoformat(str(value))
+        return datetime.fromisoformat(text)
     except ValueError:
         return None
 
@@ -92,6 +95,102 @@ class OmopDataset:
             else:
                 tables[name] = []
         return cls(**tables)
+
+
+# Correspondance ENCOUNTERCLASS Synthea -> service simulé.
+SYNTHEA_ENCOUNTER_SERVICE: dict[str, str] = {
+    "emergency": "ED",
+    "urgentcare": "ED",
+    "inpatient": "Ward",
+    "ambulatory": "outpatient_clinic",
+    "outpatient": "outpatient_clinic",
+    "wellness": "outpatient_clinic",
+}
+# Classes considérées comme relevant du flux hospitalier aigu.
+SYNTHEA_HOSPITAL_CLASSES: frozenset = frozenset({"emergency", "urgentcare", "inpatient"})
+
+
+def omop_from_synthea_csv(
+    directory: str | Path,
+    *,
+    hospital_only: bool = True,
+    service_map: dict[str, str] | None = None,
+) -> OmopDataset:
+    """Construit un OmopDataset à partir d'un export **CSV** de Synthea.
+
+    L'export CSV de Synthea (``patients.csv``, ``encounters.csv``,
+    ``conditions.csv``, ``procedures.csv``) est stable, contrairement à
+    l'exportateur OMOP natif. Les ``ENCOUNTERCLASS`` sont mappées vers les
+    services simulés.
+
+    Note : Synthea modélise des parcours de soins sur toute une vie (nombreuses
+    visites ambulatoires) et ne distingue pas les transferts intra-hospitaliers
+    (ICU/ward). Avec ``hospital_only=True`` (défaut), seules les classes aiguës
+    (urgences, hospitalisation) sont conservées ; la calibration des transitions
+    reste donc grossière — MIMIC-IV convient mieux pour l'intra-hospitalier.
+
+    Args:
+        directory: Dossier contenant les CSV Synthea.
+        hospital_only: Ne garder que les encounters aigus (cf.
+            :data:`SYNTHEA_HOSPITAL_CLASSES`).
+        service_map: Correspondance ``ENCOUNTERCLASS -> service`` (défaut :
+            :data:`SYNTHEA_ENCOUNTER_SERVICE`).
+    """
+    directory = Path(directory)
+    service_map = service_map if service_map is not None else SYNTHEA_ENCOUNTER_SERVICE
+
+    def _read(name: str) -> list[dict]:
+        path = directory / name
+        if not path.exists():
+            return []
+        with path.open(newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
+
+    person = [
+        {
+            "person_id": row.get("Id"),
+            "gender_concept_id": "8507" if row.get("GENDER") == "M" else "8532",
+            "year_of_birth": (row.get("BIRTHDATE") or "")[:4],
+        }
+        for row in _read("patients.csv")
+    ]
+
+    visits = []
+    for row in _read("encounters.csv"):
+        cls = (row.get("ENCOUNTERCLASS") or "").lower()
+        if hospital_only and cls not in SYNTHEA_HOSPITAL_CLASSES:
+            continue
+        service = service_map.get(cls)
+        if service is None:
+            continue
+        visits.append(
+            {
+                "person_id": row.get("PATIENT"),
+                "visit_source_value": service,
+                "visit_start_date": row.get("START"),
+                "visit_end_date": row.get("STOP"),
+            }
+        )
+
+    conditions = [
+        {
+            "person_id": row.get("PATIENT"),
+            "condition_source_value": row.get("CODE"),
+            "condition_start_date": row.get("START"),
+        }
+        for row in _read("conditions.csv")
+    ]
+    procedures = [
+        {"person_id": row.get("PATIENT"), "procedure_source_value": row.get("CODE")}
+        for row in _read("procedures.csv")
+    ]
+
+    return OmopDataset(
+        person=person,
+        condition_occurrence=conditions,
+        visit_occurrence=visits,
+        procedure_occurrence=procedures,
+    )
 
 
 def _group_by(rows: list[dict], key: str) -> dict[str, list[dict]]:

@@ -43,6 +43,7 @@ from hospital_simulator import (  # noqa: E402
     estimate_transition_probabilities,
     ks_exponential,
     length_of_stay_samples,
+    omop_from_synthea_csv,
     patients_from_omop,
     peak_concurrency,
     run_replications,
@@ -86,24 +87,28 @@ def resolve_synthea_jar(jar: str | None, cache_dir: Path) -> Path | None:
         return None
 
 
-def find_omop_dir(root: Path) -> Path | None:
-    """Cherche récursivement un dossier contenant person.csv sous ``root``."""
-    for candidate in root.rglob("person.csv"):
+def _find_dir_with(root: Path, filename: str) -> Path | None:
+    """Cherche récursivement un dossier contenant ``filename`` sous ``root``."""
+    for candidate in root.rglob(filename):
         return candidate.parent
     return None
 
 
-def run_synthea(jar: Path, n_patients: int, seed: int, workdir: Path) -> Path | None:
-    """Exécute Synthea avec export OMOP ; renvoie le dossier OMOP ou None."""
+def run_synthea(jar: Path, n_patients: int, seed: int, workdir: Path) -> OmopDataset | None:
+    """Exécute Synthea (export CSV) et adapte le résultat en OmopDataset.
+
+    L'exportateur OMOP natif de Synthea est expérimental/absent selon les
+    builds ; on s'appuie donc sur l'export CSV (stable) puis on le convertit via
+    :func:`omop_from_synthea_csv`.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "java", "-jar", str(jar),
         "-p", str(n_patients),
         "-s", str(seed),
         "--exporter.baseDirectory", str(workdir),
-        "--exporter.omop.export", "true",
+        "--exporter.csv.export", "true",
         "--exporter.fhir.export", "false",
-        "--exporter.csv.export", "false",
         "--exporter.hospital.fhir.export", "false",
         "--exporter.practitioner.fhir.export", "false",
     ]
@@ -114,7 +119,13 @@ def run_synthea(jar: Path, n_patients: int, seed: int, workdir: Path) -> Path | 
     except Exception as exc:
         _log(f"Échec de l'exécution de Synthea : {exc}")
         return None
-    return find_omop_dir(workdir)
+
+    csv_dir = _find_dir_with(workdir, "patients.csv")
+    if csv_dir is None:
+        _log("Export CSV Synthea introuvable.")
+        return None
+    _log(f"Export CSV Synthea : {csv_dir}")
+    return omop_from_synthea_csv(csv_dir)
 
 
 def generate_synthetic(n_patients: int, seed: int) -> OmopDataset:
@@ -132,10 +143,9 @@ def obtain_dataset(args) -> tuple[OmopDataset, str]:
     if not args.no_synthea and shutil.which("java"):
         jar = resolve_synthea_jar(args.synthea_jar, _REPO_ROOT / ".synthea")
         if jar is not None:
-            omop_dir = run_synthea(jar, args.patients, args.seed, args.output / "synthea_raw")
-            if omop_dir is not None:
-                _log(f"OMOP Synthea généré : {omop_dir}")
-                return OmopDataset.from_dir(omop_dir), f"Synthea OMOP ({omop_dir})"
+            dataset = run_synthea(jar, args.patients, args.seed, args.output / "synthea_raw")
+            if dataset is not None and dataset.visit_occurrence:
+                return dataset, f"Synthea ({args.patients} patients, export CSV)"
             _log("Synthea indisponible — bascule sur le générateur synthétique.")
     elif not args.no_synthea:
         _log("Java introuvable — bascule sur le générateur synthétique.")

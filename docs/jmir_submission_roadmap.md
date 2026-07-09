@@ -53,11 +53,16 @@ Three pillars, matching JMIR's implicit **Develop → Demonstrate → Evaluate**
       `patients_from_omop` / `stays_from_omop` / `estimate_*`), with a
       self-contained synthetic fallback. **(Still to do: run on a real Synthea
       OMOP export and report those numbers.)**
-- [x] **Validation tooling**: `validation.py` KS tests; `ks_exponential()`
-      checks the LOS assumption against observed durations (on synthetic data:
-      transitions recovered exactly, exponential fit not rejected, p>0.05).
-      **(Still to do: validation on real data; add occupancy validation vs a
-      held-out period.)**
+- [x] **Validation tooling + real-data run**: `validation.py` KS tests;
+      `ks_exponential()` checks the LOS assumption. On synthetic data the
+      exponential fit is not rejected (p>0.05); **on a real Synthea run
+      (`hdts.py`, 500 patients) the exponential LOS assumption is REJECTED
+      (p≈0, ED/Ward)** — an empirical, reportable limitation motivating a
+      heavier-tailed LOS. Caveat: Synthea models lifelong care and no
+      intra-hospital ICU/ward transfers, so its transitions are coarse
+      (ED→ED inflated); **MIMIC-IV is the better dataset for the transition/LOS
+      story.** **(Still to do: MIMIC-IV run; occupancy validation vs held-out
+      period.)**
 - [x] **Sensitivity analysis tooling**: `sensitivity_sweep()` sweeps one
       parameter (arrival rate, ICU capacity, mean LOS…) and reports each
       indicator vs parameter with 95% CIs. *(Still to do: run it on the real
