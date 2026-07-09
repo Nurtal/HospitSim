@@ -365,10 +365,10 @@ hdts/
 
 ## Phase 4 — Digital twin experiments
 
-* [ ] Scenario engine
-* [ ] Dashboard
-* [ ] Hospital stress indicators
-* [ ] Reproducible simulations
+* [x] Scenario engine
+* [x] Dashboard
+* [x] Hospital stress indicators
+* [x] Reproducible simulations
 
 ---
 

@@ -6,7 +6,12 @@ from hospital_simulator.services.service_manager import ServiceManager
 from hospital_simulator.services.service_registry import ServiceRegistry
 from hospital_simulator.orchestration import HospitalFlowSimulator
 from hospital_simulator.events import ClinicalEvent, EventEngine
-from hospital_simulator.visualization import render_registry, print_registry
+from hospital_simulator.visualization import (
+    render_registry,
+    print_registry,
+    render_dashboard,
+    print_dashboard,
+)
 from hospital_simulator.models.data_structure import (
     Diagnosis,
     DiagnosisLocal,
@@ -33,6 +38,12 @@ from hospital_simulator.calibration import (
     estimate_procedure_probabilities,
     build_pathway_from_transitions,
 )
+from hospital_simulator.scenario import (
+    Scenario,
+    SimulationEngine,
+    SimulationResult,
+    run_scenario,
+)
 
 __all__ = [
     "Patient",
@@ -45,6 +56,8 @@ __all__ = [
     "EventEngine",
     "render_registry",
     "print_registry",
+    "render_dashboard",
+    "print_dashboard",
     "Diagnosis",
     "DiagnosisLocal",
     "MedicalProcedure",
@@ -63,4 +76,8 @@ __all__ = [
     "estimate_length_of_stay",
     "estimate_procedure_probabilities",
     "build_pathway_from_transitions",
+    "Scenario",
+    "SimulationEngine",
+    "SimulationResult",
+    "run_scenario",
 ]

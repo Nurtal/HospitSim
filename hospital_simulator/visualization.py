@@ -56,3 +56,44 @@ def render_registry(registry: ServiceRegistry, width: int = 20) -> str:
 def print_registry(registry: ServiceRegistry, width: int = 20) -> None:
     """Affiche l'occupation des services sur la sortie standard."""
     print(render_registry(registry, width=width))
+
+
+def render_dashboard(result, width: int = 20) -> str:
+    """Rend un tableau de bord texte d'un résultat de simulation (Phase 4).
+
+    Args:
+        result: Un ``SimulationResult`` (tout objet exposant ``stress_indicators()``).
+        width: Largeur des barres d'occupation.
+
+    Returns:
+        Une chaîne multi-lignes récapitulant flux, stress et occupation par service.
+    """
+    ind = result.stress_indicators()
+    lines = [
+        f"=== Tableau de bord — scénario : {ind['scenario']} ({ind['days']} jours) ===",
+        "",
+        f"  Arrivées        : {ind['arrivals']}",
+        f"  Admissions      : {ind['admissions']}",
+        f"  Sorties         : {ind['discharges']}",
+        f"  Décès           : {ind['deaths']} (mortalité {ind['mortality_rate'] * 100:.1f}%)",
+        f"  Transferts bloqués : {ind['blocked_transfers']}",
+        f"  File d'attente  : pic {ind['peak_waiting']}, moyenne {ind['mean_waiting']}",
+        "",
+        "  Occupation par service (pic) :",
+    ]
+
+    services = ind["services"]
+    label_width = max((len(name) for name in services), default=0)
+    for name, stats in services.items():
+        bar = render_occupancy_bar(stats["peak_occupancy"], stats["capacity"] or 1, width=width)
+        sat = stats["saturation_days"]
+        lines.append(
+            f"    {name:>{label_width}} {bar}  saturation: {sat}j"
+        )
+
+    return "\n".join(lines)
+
+
+def print_dashboard(result, width: int = 20) -> None:
+    """Affiche le tableau de bord d'une simulation sur la sortie standard."""
+    print(render_dashboard(result, width=width))
