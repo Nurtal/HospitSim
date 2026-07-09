@@ -81,6 +81,23 @@ synthetic OMOP dataset, recovers the transition/length-of-stay parameters via
 `estimate_transition_probabilities` / `estimate_length_of_stay`, and runs a
 calibrated, replicated what-if scenario.
 
+## One-command standalone
+
+`hdts.py` runs the whole pipeline end to end — it generates data with
+**Synthea** (downloading the jar and exporting to OMOP if Java is available,
+otherwise falling back to a synthetic dataset), calibrates transitions and
+length of stay, validates the length-of-stay assumption, sizes service
+capacities from the observed peak occupancy, and simulates a baseline + a
+what-if scenario with confidence intervals — writing a report (and optional
+figures):
+
+```bash
+python hdts.py                       # Synthea if available, else synthetic fallback
+python hdts.py --patients 2000 --figures
+python hdts.py --omop-dir /data/omop # start from existing OMOP CSVs
+python hdts.py --no-synthea          # force the synthetic generator
+```
+
 ---
 
 # 🎯 Objectives

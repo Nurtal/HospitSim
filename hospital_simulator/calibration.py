@@ -103,6 +103,36 @@ def length_of_stay_samples(stays: list[dict]) -> dict[str, list[float]]:
     return dict(durations)
 
 
+def peak_concurrency(stays: list[dict]) -> dict[str, int]:
+    """Occupation simultanée maximale observée par service (balayage d'intervalles).
+
+    Utile pour dimensionner les capacités d'un scénario à partir des données.
+
+    Returns:
+        Un dict ``{service: nombre_max_de_patients_simultanés}``.
+    """
+    events: dict[str, list[tuple]] = defaultdict(list)
+    for stay in stays:
+        service = stay.get("service")
+        start = parse_omop_date(stay.get("start"))
+        end = parse_omop_date(stay.get("end"))
+        if not service or start is None or end is None or end < start:
+            continue
+        events[service].append((start, 1))
+        events[service].append((end, -1))
+
+    peaks: dict[str, int] = {}
+    for service, evs in events.items():
+        # À temps égal, traiter les sorties (-1) avant les entrées (+1).
+        evs.sort(key=lambda e: (e[0], e[1]))
+        current = peak = 0
+        for _, delta in evs:
+            current += delta
+            peak = max(peak, current)
+        peaks[service] = peak
+    return peaks
+
+
 def estimate_length_of_stay(stays: list[dict]) -> dict[str, dict[str, float]]:
     """Estime la durée de séjour (en jours) par service.
 

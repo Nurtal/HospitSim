@@ -36,6 +36,7 @@ from hospital_simulator.calibration import (
     estimate_transition_probabilities,
     estimate_length_of_stay,
     length_of_stay_samples,
+    peak_concurrency,
     estimate_procedure_probabilities,
     build_pathway_from_transitions,
 )
@@ -86,6 +87,7 @@ __all__ = [
     "estimate_transition_probabilities",
     "estimate_length_of_stay",
     "length_of_stay_samples",
+    "peak_concurrency",
     "estimate_procedure_probabilities",
     "build_pathway_from_transitions",
     "describe",
