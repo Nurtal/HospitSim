@@ -35,8 +35,15 @@ from hospital_simulator.omop import (
 from hospital_simulator.calibration import (
     estimate_transition_probabilities,
     estimate_length_of_stay,
+    length_of_stay_samples,
     estimate_procedure_probabilities,
     build_pathway_from_transitions,
+)
+from hospital_simulator.validation import (
+    describe,
+    ks_two_sample,
+    ks_one_sample,
+    ks_exponential,
 )
 from hospital_simulator.scenario import (
     Scenario,
@@ -78,8 +85,13 @@ __all__ = [
     "procedures_from_omop",
     "estimate_transition_probabilities",
     "estimate_length_of_stay",
+    "length_of_stay_samples",
     "estimate_procedure_probabilities",
     "build_pathway_from_transitions",
+    "describe",
+    "ks_two_sample",
+    "ks_one_sample",
+    "ks_exponential",
     "Scenario",
     "SimulationEngine",
     "SimulationResult",

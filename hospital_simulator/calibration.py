@@ -79,17 +79,17 @@ def estimate_transition_probabilities(
     return probabilities
 
 
-def estimate_length_of_stay(stays: list[dict]) -> dict[str, dict[str, float]]:
-    """Estime la durée de séjour (en jours) par service.
+def length_of_stay_samples(stays: list[dict]) -> dict[str, list[float]]:
+    """Extrait les durées de séjour (jours) observées par service.
 
-    Les séjours sans date de début ou de fin exploitable sont ignorés. Une durée
-    négative (fin avant début) est également écartée.
+    Les séjours sans date de début/fin exploitable ou de durée négative sont
+    ignorés. Utile pour la validation distributionnelle (cf.
+    :mod:`hospital_simulator.validation`).
 
     Returns:
-        Un dict ``{service: {"mean": ..., "median": ..., "n": ...}}``.
+        Un dict ``{service: [durée_en_jours, ...]}``.
     """
     durations: dict[str, list[float]] = defaultdict(list)
-
     for stay in stays:
         service = stay.get("service")
         start = parse_omop_date(stay.get("start"))
@@ -100,9 +100,17 @@ def estimate_length_of_stay(stays: list[dict]) -> dict[str, dict[str, float]]:
         if days < 0:
             continue
         durations[service].append(days)
+    return dict(durations)
 
+
+def estimate_length_of_stay(stays: list[dict]) -> dict[str, dict[str, float]]:
+    """Estime la durée de séjour (en jours) par service.
+
+    Returns:
+        Un dict ``{service: {"mean": ..., "median": ..., "n": ...}}``.
+    """
     result: dict[str, dict[str, float]] = {}
-    for service, values in durations.items():
+    for service, values in length_of_stay_samples(stays).items():
         result[service] = {
             "mean": statistics.mean(values),
             "median": statistics.median(values),
