@@ -43,6 +43,7 @@ from hospital_simulator import (  # noqa: E402
     ks_exponential,
     length_of_stay_samples,
     markov_order_check,
+    omop_from_flat_csv,
     omop_from_mimic,
     poisson_dispersion_test,
     replicated_census,
@@ -59,6 +60,8 @@ def _log(msg: str) -> None:
 
 
 def load_dataset(args) -> tuple[OmopDataset, str]:
+    if args.flat_csv:
+        return omop_from_flat_csv(args.flat_csv), f"CSV plat ({args.flat_csv})"
     if args.mimic_dir:
         return omop_from_mimic(args.mimic_dir), f"MIMIC-IV ({args.mimic_dir})"
     if args.omop_dir:
@@ -205,7 +208,9 @@ def run_covid(stays, split, n_reps, seed, plotting, outdir) -> list[str]:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="HDTS — étude de validation (figures du papier).")
     parser.add_argument("--mimic-dir", type=str, default=None)
-    parser.add_argument("--omop-dir", type=str, default=None)
+    parser.add_argument("--omop-dir", type=str, default=None, help="Dossier de CSV OMOP CDM.")
+    parser.add_argument("--flat-csv", type=str, default=None,
+                        help="Un seul CSV plat (un séjour par ligne : person_id, service, start, end, ...).")
     parser.add_argument("--synthetic", action="store_true", help="Force les données synthétiques.")
     parser.add_argument("--patients", type=int, default=800)
     parser.add_argument("--seed", type=int, default=2026)
@@ -225,6 +230,18 @@ def main(argv=None) -> int:
 
     args.output.mkdir(parents=True, exist_ok=True)
     dataset, label = load_dataset(args)
+
+    from hospital_simulator import validate_omop_dataset
+    check = validate_omop_dataset(dataset)
+    mortality = "oui" if (check["has_disposition"] or check["n_deaths"]) else "non"
+    _log(f"Dataset : {check['n_visits']} visites, {check['n_stays']} séjours, "
+         f"services={check['services']}, mortalité={mortality}")
+    for msg in check["messages"]:
+        _log(msg)
+    if not check["ok"]:
+        _log("Dataset inexploitable — arrêt.")
+        return 1
+
     stays = stays_from_omop(dataset)
     graph = build_hospital_graph(dataset)
     scenario = graph.to_scenario(seed=args.seed, days=args.days, warmup_days=args.warmup)

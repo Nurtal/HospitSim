@@ -33,6 +33,8 @@ from hospital_simulator.omop import (
     procedures_from_omop,
     omop_from_synthea_csv,
     omop_from_mimic,
+    omop_from_flat_csv,
+    validate_omop_dataset,
 )
 from hospital_simulator.calibration import (
     estimate_transition_probabilities,
@@ -110,6 +112,8 @@ __all__ = [
     "procedures_from_omop",
     "omop_from_synthea_csv",
     "omop_from_mimic",
+    "omop_from_flat_csv",
+    "validate_omop_dataset",
     "estimate_transition_probabilities",
     "estimate_length_of_stay",
     "length_of_stay_samples",

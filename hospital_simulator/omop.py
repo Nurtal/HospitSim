@@ -40,6 +40,7 @@ _OMOP_TABLES = (
     "condition_occurrence",
     "visit_occurrence",
     "procedure_occurrence",
+    "death",
 )
 
 
@@ -78,6 +79,7 @@ class OmopDataset:
     condition_occurrence: list[dict] = field(default_factory=list)
     visit_occurrence: list[dict] = field(default_factory=list)
     procedure_occurrence: list[dict] = field(default_factory=list)
+    death: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_dir(cls, directory: str | Path) -> "OmopDataset":
@@ -539,7 +541,137 @@ def stays_from_omop(
                 "diagnosis": visit.get("diagnosis") or primary.get(person_id),
             }
         )
+
+    # Décès depuis la table OMOP `death` -> disposition "Death" du dernier séjour
+    # (uniquement si la disposition n'est pas déjà portée par la visite).
+    if dataset.death:
+        _mark_stays_death(stays, dataset.death)
     return stays
+
+
+def _mark_stays_death(stays: list[dict], death_rows: list[dict]) -> None:
+    """Marque le dernier séjour d'une personne comme décès si la date concorde."""
+    death_date: dict[str, datetime] = {}
+    for row in death_rows:
+        pid = str(row.get("person_id"))
+        dd = parse_omop_date(row.get("death_date") or row.get("death_datetime"))
+        if dd is not None:
+            death_date[pid] = dd
+
+    last: dict[str, tuple] = {}  # person_id -> (start, index)
+    for i, stay in enumerate(stays):
+        pid = str(stay.get("person_id"))
+        if pid not in death_date:
+            continue
+        start = stay.get("start")
+        if pid not in last or (start is not None and (last[pid][0] is None or start >= last[pid][0])):
+            last[pid] = (start, i)
+
+    for pid, (_, i) in last.items():
+        stay = stays[i]
+        if stay.get("disposition"):
+            continue
+        start, end, dd = stay.get("start"), stay.get("end"), death_date[pid]
+        if start is not None and end is not None and start.date() <= dd.date() <= end.date() + timedelta(days=1):
+            stay["disposition"] = "Death"
+
+
+def omop_from_flat_csv(path: str | Path) -> OmopDataset:
+    """Construit un OmopDataset depuis **un seul CSV plat** (un séjour par ligne).
+
+    Format d'entrée le plus simple possible pour alimenter le simulateur — utile
+    quand l'export de l'EDS est une table à plat plutôt qu'un CDM OMOP complet.
+
+    Colonnes reconnues (insensibles à la casse) :
+        * ``person_id`` (requis) — identifiant patient/épisode ;
+        * ``service`` (requis) — nom du service (ex: "ED", "ICU", "Ward") ;
+        * ``start`` / ``end`` (requis) — dates de début/fin (ISO) — alias acceptés :
+          ``visit_start_date`` / ``visit_end_date``, ``intime`` / ``outtime`` ;
+        * ``diagnosis`` (optionnel) — code CIM-10 (routage par diagnostic) ;
+        * ``disposition`` (optionnel) — "Death" pour un décès en fin de séjour ;
+        * ``age`` / ``sex`` (optionnels) — démographie.
+    """
+    path = Path(path)
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    def pick(row, *names):
+        for name in names:
+            for key in row:
+                if key.lower() == name:
+                    value = row[key]
+                    if value not in (None, ""):
+                        return value
+        return None
+
+    visits, persons_seen = [], {}
+    for row in rows:
+        pid = pick(row, "person_id", "subject_id", "patient_id")
+        service = pick(row, "service", "visit_source_value", "careunit", "unit")
+        if pid is None or service is None:
+            continue
+        visits.append(
+            {
+                "person_id": pid,
+                "visit_source_value": service,
+                "visit_start_date": pick(row, "start", "visit_start_date", "intime", "admit"),
+                "visit_end_date": pick(row, "end", "visit_end_date", "outtime", "discharge"),
+                "diagnosis": pick(row, "diagnosis", "icd10", "cim10", "condition_source_value"),
+                "disposition": pick(row, "disposition"),
+            }
+        )
+        if pid not in persons_seen:
+            sex = pick(row, "sex", "gender")
+            age = _as_int(pick(row, "age"))
+            persons_seen[pid] = {
+                "person_id": pid,
+                "gender_concept_id": {"M": "8507", "F": "8532"}.get((sex or "").upper()[:1], ""),
+                "year_of_birth": str(datetime.now().year - age) if age is not None else "",
+            }
+
+    return OmopDataset(person=list(persons_seen.values()), visit_occurrence=visits)
+
+
+def validate_omop_dataset(dataset: OmopDataset) -> dict:
+    """Vérifie qu'un dataset est exploitable et renvoie un rapport de diagnostic.
+
+    Returns:
+        ``{ok, n_person, n_visits, n_conditions, n_deaths, n_stays, services,
+        has_dates, has_diagnosis, has_disposition, messages}``.
+    """
+    stays = stays_from_omop(dataset)
+    services = sorted({s["service"] for s in stays})
+    has_dates = any(s.get("start") and s.get("end") for s in stays)
+    has_diag = any(s.get("diagnosis") for s in stays)
+    has_disp = any(s.get("disposition") for s in stays)
+
+    messages = []
+    if not dataset.visit_occurrence:
+        messages.append("ERREUR: aucune visite (visit_occurrence vide) — rien à simuler.")
+    if not stays:
+        messages.append("ERREUR: aucun séjour exploitable (service/dates manquants).")
+    if not has_dates:
+        messages.append("ATTENTION: pas de dates de séjour -> durées de séjour indisponibles.")
+    if not has_diag:
+        messages.append("INFO: pas de diagnostic -> routage par diagnostic inactif (fallback global).")
+    if not has_disp and not dataset.death:
+        messages.append("INFO: pas de décès (death/disposition) -> mortalité non modélisée.")
+    if len(services) < 2:
+        messages.append("ATTENTION: moins de 2 services -> transitions triviales.")
+
+    return {
+        "ok": bool(stays) and has_dates,
+        "n_person": len(dataset.person),
+        "n_visits": len(dataset.visit_occurrence),
+        "n_conditions": len(dataset.condition_occurrence),
+        "n_deaths": len(dataset.death),
+        "n_stays": len(stays),
+        "services": services,
+        "has_dates": has_dates,
+        "has_diagnosis": has_diag,
+        "has_disposition": has_disp,
+        "messages": messages,
+    }
 
 
 def conditions_from_omop(

@@ -116,6 +116,29 @@ scenario = graph.to_scenario(seed=2026)       # diagnosis routing activated if d
 print(run_replications(scenario, 40).render_summary(metrics=["deaths", "mortality_rate"]))
 ```
 
+## Data input formats
+
+Three ways to feed the framework, from simplest to full CDM:
+
+1. **One flat CSV** (`--flat-csv`, easiest — one row per patient-service stay):
+   columns `person_id, service, start, end` (required) and optional
+   `diagnosis` (CIM-10), `disposition` (`Death`), `age`, `sex`.
+2. **MIMIC-IV** (`--mimic-dir`): reads `patients`, `transfers`, `diagnoses_icd`,
+   `admissions` (`.csv`/`.csv.gz`).
+3. **OMOP CDM directory** (`--omop-dir`): CSV files
+   - `person.csv` — `person_id, gender_concept_id` (8507/8532), `year_of_birth`
+   - `visit_occurrence.csv` — `person_id, visit_start_date, visit_end_date`, and
+     **`visit_source_value`** for the service (ED/ICU/Ward…); `visit_concept_id`
+     is a coarse fallback and cannot distinguish ICU from ward
+   - `condition_occurrence.csv` — `person_id, condition_source_value` (CIM-10),
+     `condition_start_date`, and `condition_status_source_value=primary` (or
+     `condition_type_concept_id=32902`) to flag the main diagnosis
+   - `procedure_occurrence.csv` — optional (`person_id, procedure_source_value`)
+   - `death.csv` — optional but needed for **mortality** (`person_id, death_date`)
+
+`validate_omop_dataset(dataset)` reports what is present/usable; the study and
+standalone scripts print this check on startup.
+
 ## Validation study (paper figures)
 
 One script runs the whole validation protocol and writes the report + figures:
