@@ -39,20 +39,26 @@ sys.path.insert(0, str(_REPO_ROOT))
 from hospital_simulator import (  # noqa: E402
     OmopDataset,
     Scenario,
+    census_sample,
+    ci_coverage,
+    daily_arrivals,
     estimate_length_of_stay,
     estimate_transition_probabilities,
     ks_exponential,
     length_of_stay_samples,
+    markov_order_check,
     omop_from_mimic,
     omop_from_synthea_csv,
     patients_from_omop,
     peak_concurrency,
+    poisson_dispersion_test,
     run_replications,
     run_scenario,
     stays_from_omop,
+    wasserstein_1d,
 )
 from hospital_simulator.omop import parse_omop_date  # noqa: E402
-from hospital_simulator.scenario import TERMINALS  # noqa: E402
+from hospital_simulator.scenario import TERMINALS, replicated_census  # noqa: E402
 
 SYNTHEA_JAR_URL = (
     "https://github.com/synthetichealth/synthea/releases/download/"
@@ -289,6 +295,76 @@ def build_report(source, dataset, scenario, context, seed, n_reps) -> str:
     return "\n".join(lines)
 
 
+def build_validation_report(scenario, context, seed, n_reps) -> str:
+    """Rapport de validation opérationnelle : couverture census, arrivées, LOS, Markov."""
+    import random as _random
+
+    stays = context["stays"]
+    mean_los = context["mean_los"]
+    entry = context["entry"]
+
+    lines = ["=" * 64, "HDTS — rapport de VALIDATION", "=" * 64]
+
+    # 1) Couverture d'IC du census (observé vs bande simulée).
+    obs = census_sample(stays)
+    bands = replicated_census(scenario, n_reps, base_seed=seed)
+    sim = {svc: [v for day in days for v in day] for svc, days in bands.items()}
+    lines.append("Couverture d'IC 95 % du census (observé vs simulé) :")
+    for svc in scenario.service_capacities:
+        if obs.get(svc) and sim.get(svc):
+            cov = ci_coverage(obs[svc], sim[svc])
+            lines.append(f"    {svc:<8} couverture={cov['coverage'] * 100:5.1f}%  "
+                         f"IC_sim=[{cov['ci_low']:.0f}, {cov['ci_high']:.0f}]  "
+                         f"(n_obs={cov['n_observed']})")
+
+    # 2) Processus d'arrivée : test de dispersion de Poisson.
+    arrivals = daily_arrivals(stays, entry)
+    lines += ["", "Processus d'arrivée (dispersion de Poisson) :"]
+    if len(arrivals) >= 2:
+        d = poisson_dispersion_test(arrivals)
+        lines.append(f"    {entry}: indice={d['dispersion_index']:.2f}  p={d['p_value']:.3f}  "
+                     f"-> Poisson {'OK' if d['is_poisson'] else 'REJETÉ'}")
+    else:
+        lines.append("    (pas assez de jours)")
+
+    # 3) LOS : ajustement exponentiel (KS) + distance de Wasserstein.
+    rng = _random.Random(seed)
+    los_samples = length_of_stay_samples(stays)
+    lines += ["", "Durée de séjour (exponentielle : KS + Wasserstein) :"]
+    for svc, sample in los_samples.items():
+        mean = mean_los.get(svc)
+        if not mean or len(sample) < 20:
+            continue
+        d, p = ks_exponential(sample, mean)
+        exp_ref = [rng.expovariate(1.0 / mean) for _ in range(2000)]
+        w = wasserstein_1d(sample, exp_ref)
+        lines.append(f"    {svc:<8} n={len(sample):>4}  D={d:.3f} p={p:.3f}  "
+                     f"W1={w:.2f}j  -> exponentiel {'OK' if p > 0.05 else 'REJETÉ'}")
+
+    # 4) Audit de l'hypothèse markovienne d'ordre 1.
+    mk = markov_order_check(stays)
+    lines += ["", "Hypothèse markovienne ordre-1 (TV ordre-2 vs ordre-1) :",
+              f"    TV moyenne={mk['mean_tv']:.3f}  TV max={mk['max_tv']:.3f}  "
+              f"contextes={mk['n_contexts']}"]
+    lines.append("=" * 64)
+    return "\n".join(lines)
+
+
+def maybe_validation_figure(scenario, context, seed, n_reps, outdir: Path) -> None:
+    try:
+        from hospital_simulator.plotting import plot_census_coverage
+    except ImportError:
+        _log("Figure de couverture ignorée (extra 'viz' absent).")
+        return
+    obs = census_sample(context["stays"])
+    bands = replicated_census(scenario, n_reps, base_seed=seed)
+    # Service le plus contraint pour la figure phare.
+    target = min(scenario.service_capacities, key=lambda s: scenario.effective_capacity(s))
+    if obs.get(target) and bands.get(target):
+        plot_census_coverage(obs[target], bands[target], target, save_path=outdir / "census_coverage.png")
+        _log(f"Figure de couverture écrite : {outdir / 'census_coverage.png'}")
+
+
 def maybe_figures(scenario, sweep_param, outdir: Path) -> None:
     try:
         from hospital_simulator.plotting import plot_occupancy, plot_stress, plot_sensitivity
@@ -324,6 +400,8 @@ def main(argv=None) -> int:
     parser.add_argument("--synthea-jar", type=str, default=None, help="Chemin du jar Synthea.")
     parser.add_argument("--no-synthea", action="store_true", help="Force le générateur synthétique.")
     parser.add_argument("--figures", action="store_true", help="Génère des figures PNG (extra 'viz').")
+    parser.add_argument("--validate", action="store_true",
+                        help="Ajoute un rapport de validation opérationnelle (couverture, LOS, arrivées, Markov).")
     args = parser.parse_args(argv)
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -336,6 +414,15 @@ def main(argv=None) -> int:
     report_path = args.output / "report.txt"
     report_path.write_text(report + "\n", encoding="utf-8")
     _log(f"Rapport écrit : {report_path}")
+
+    if args.validate:
+        validation = build_validation_report(scenario, context, args.seed, args.replications)
+        print(validation)
+        vpath = args.output / "validation_report.txt"
+        vpath.write_text(validation + "\n", encoding="utf-8")
+        _log(f"Rapport de validation écrit : {vpath}")
+        if args.figures:
+            maybe_validation_figure(scenario, context, args.seed, args.replications, args.output)
 
     if args.figures:
         maybe_figures(scenario, context["entry"], args.output)

@@ -439,6 +439,40 @@ def run_replications(
     return ReplicatedResult(scenario=scenario, runs=runs)
 
 
+def replicated_census(
+    scenario: Scenario,
+    n_replications: int,
+    *,
+    base_seed: int | None = None,
+) -> dict[str, list[list[int]]]:
+    """Occupation journalière simulée par service sur ``n_replications`` réplications.
+
+    Hors période de chauffe (``warmup_days``). Sert à construire la bande d'IC du
+    census simulé pour la validation opérationnelle (couverture, cf.
+    :func:`hospital_simulator.validation.ci_coverage`).
+
+    Returns:
+        ``{service: [[occ_rep0, occ_rep1, ...] pour le jour 0], [... jour 1], ...]}``.
+    """
+    if n_replications < 1:
+        raise ValueError("n_replications doit être >= 1.")
+    if base_seed is None:
+        base_seed = scenario.seed if scenario.seed is not None else 0
+
+    runs = [
+        run_scenario(replace(scenario, seed=base_seed + i)).analysis_records()
+        for i in range(n_replications)
+    ]
+    services = list(scenario.service_capacities)
+    n_days = min((len(r) for r in runs), default=0)
+
+    bands: dict[str, list[list[int]]] = {svc: [] for svc in services}
+    for day in range(n_days):
+        for svc in services:
+            bands[svc].append([run[day]["occupancy"].get(svc, 0) for run in runs])
+    return bands
+
+
 # --- Analyse de sensibilité (balayage d'un paramètre) ---
 
 # Champs scalaires du Scenario balayables directement par nom.

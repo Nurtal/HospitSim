@@ -48,3 +48,19 @@ def test_standalone_runs_synthetic_and_writes_report(tmp_path):
     assert "HDTS" in text
     assert "Validation séjour exponentiel" in text
     assert "WHAT-IF" in text
+
+
+def test_standalone_validate_writes_validation_report(tmp_path):
+    hdts = _load_hdts()
+    rc = hdts.main([
+        "--no-synthea", "--patients", "200", "--replications", "5",
+        "--validate", "--output", str(tmp_path),
+    ])
+    assert rc == 0
+    vreport = tmp_path / "validation_report.txt"
+    assert vreport.exists()
+    text = vreport.read_text(encoding="utf-8")
+    assert "rapport de VALIDATION" in text
+    assert "Couverture d'IC" in text
+    assert "dispersion de Poisson" in text
+    assert "markovienne" in text

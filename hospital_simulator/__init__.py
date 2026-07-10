@@ -47,6 +47,19 @@ from hospital_simulator.validation import (
     ks_two_sample,
     ks_one_sample,
     ks_exponential,
+    ci_coverage,
+    mae,
+    mape,
+    bias,
+    wasserstein_1d,
+    poisson_dispersion_test,
+    markov_order_check,
+)
+from hospital_simulator.observed import (
+    daily_census,
+    census_sample,
+    daily_arrivals,
+    temporal_split,
 )
 from hospital_simulator.scenario import (
     Scenario,
@@ -56,6 +69,7 @@ from hospital_simulator.scenario import (
     SensitivitySweepResult,
     run_scenario,
     run_replications,
+    replicated_census,
     sensitivity_sweep,
 )
 
@@ -98,6 +112,17 @@ __all__ = [
     "ks_two_sample",
     "ks_one_sample",
     "ks_exponential",
+    "ci_coverage",
+    "mae",
+    "mape",
+    "bias",
+    "wasserstein_1d",
+    "poisson_dispersion_test",
+    "markov_order_check",
+    "daily_census",
+    "census_sample",
+    "daily_arrivals",
+    "temporal_split",
     "Scenario",
     "SimulationEngine",
     "SimulationResult",
@@ -105,5 +130,6 @@ __all__ = [
     "SensitivitySweepResult",
     "run_scenario",
     "run_replications",
+    "replicated_census",
     "sensitivity_sweep",
 ]

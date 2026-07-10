@@ -108,6 +108,60 @@ def plot_occupancy(
     return _finish(fig, save_path)
 
 
+def plot_census_coverage(
+    observed_census: list,
+    simulated_bands: list,
+    service: str,
+    *,
+    save_path=None,
+):
+    """Figure phare de validation : census observé vs bande d'IC 95 % simulée.
+
+    Args:
+        observed_census: valeurs de census journalier observées pour le service.
+        simulated_bands: sortie de ``replicated_census`` pour ce service
+            (``[[occ_rep, ...] par jour]``).
+        service: nom du service.
+        save_path: si fourni, enregistre la figure.
+    """
+    import statistics
+
+    days = list(range(len(simulated_bands)))
+    low = [_pctl(sorted(reps), 2.5) for reps in simulated_bands]
+    high = [_pctl(sorted(reps), 97.5) for reps in simulated_bands]
+    med = [statistics.median(reps) for reps in simulated_bands]
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.fill_between(days, low, high, color="#1f77b4", alpha=0.2, label="IC 95 % simulé")
+    ax.plot(days, med, color="#1f77b4", label="médiane simulée")
+    # Census observé : histogramme horizontal en marge (distribution).
+    ax.axhline(statistics.median(observed_census), color="#d62728", linestyle="--",
+               label="médiane observée")
+    obs_sorted = sorted(observed_census)
+    ax.axhspan(_pctl(obs_sorted, 2.5), _pctl(obs_sorted, 97.5), color="#d62728", alpha=0.10,
+               label="IC 95 % observé")
+    ax.set_xlabel("Jour de simulation")
+    ax.set_ylabel(f"Census — {service}")
+    ax.set_title(f"Validation du census — {service}")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    return _finish(fig, save_path)
+
+
+def _pctl(sorted_values, pct):
+    """Percentile par interpolation (échantillon trié)."""
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    import math
+    rank = (pct / 100.0) * (len(sorted_values) - 1)
+    lo = int(math.floor(rank))
+    hi = min(lo + 1, len(sorted_values) - 1)
+    frac = rank - lo
+    return sorted_values[lo] * (1 - frac) + sorted_values[hi] * frac
+
+
 def plot_stress(result: SimulationResult, *, save_path=None):
     """Trace un bar chart des taux d'occupation moyen et pic par service."""
     ind = result.stress_indicators()
