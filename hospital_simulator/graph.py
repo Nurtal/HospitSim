@@ -143,7 +143,23 @@ def build_hospital_graph(
         group_routing: active le routage conditionné au diagnostic si les données le
             permettent (sinon fallback global).
     """
-    stays = stays_from_omop(dataset)
+    return build_hospital_graph_from_stays(
+        stays_from_omop(dataset), level=level,
+        capacity_factor=capacity_factor, group_routing=group_routing,
+    )
+
+
+def build_hospital_graph_from_stays(
+    stays: list[dict],
+    *,
+    level: str = "category",
+    capacity_factor: float = 1.3,
+    group_routing: bool = True,
+) -> HospitalGraph:
+    """Comme :func:`build_hospital_graph` mais à partir de séjours déjà normalisés.
+
+    Utile pour calibrer sur un sous-ensemble temporel (hold-out, back-test COVID).
+    """
     routing = estimate_transition_probabilities(stays)
     mean_los = {s: st["mean"] for s, st in estimate_length_of_stay(stays).items()}
     peaks = peak_concurrency(stays)

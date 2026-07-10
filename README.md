@@ -116,6 +116,23 @@ scenario = graph.to_scenario(seed=2026)       # diagnosis routing activated if d
 print(run_replications(scenario, 40).render_summary(metrics=["deaths", "mortality_rate"]))
 ```
 
+## Validation study (paper figures)
+
+One script runs the whole validation protocol and writes the report + figures:
+
+```bash
+python scripts/validation_study.py --mimic-dir /data/mimiciv --output figures/
+python scripts/validation_study.py --mimic-dir /data/mimiciv \
+    --holdout-date 2150-06-01 --covid-split 2150-03-01   # + temporal hold-out & COVID back-test
+python scripts/validation_study.py --synthetic --patients 800   # offline demo
+```
+
+It produces: census CI-coverage per service, LOS goodness-of-fit (KS + Wasserstein),
+arrival-process Poisson check, Markov order-1 audit, temporal hold-out, and — with
+`--covid-split` — a predictive **COVID natural-experiment back-test** (calibrate
+pre-period, propagate the observed surge, compare predicted vs observed census and
+mortality).
+
 ## Interactive demonstrator (optional)
 
 ```bash

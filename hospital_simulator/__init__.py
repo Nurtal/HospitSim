@@ -45,7 +45,11 @@ from hospital_simulator.calibration import (
     estimate_transitions_by_group,
     estimate_diagnosis_mix,
 )
-from hospital_simulator.graph import HospitalGraph, build_hospital_graph
+from hospital_simulator.graph import (
+    HospitalGraph,
+    build_hospital_graph,
+    build_hospital_graph_from_stays,
+)
 from hospital_simulator.validation import (
     describe,
     ks_two_sample,
@@ -117,6 +121,7 @@ __all__ = [
     "estimate_diagnosis_mix",
     "HospitalGraph",
     "build_hospital_graph",
+    "build_hospital_graph_from_stays",
     "describe",
     "ks_two_sample",
     "ks_one_sample",

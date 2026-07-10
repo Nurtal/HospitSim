@@ -162,6 +162,65 @@ def _pctl(sorted_values, pct):
     return sorted_values[lo] * (1 - frac) + sorted_values[hi] * frac
 
 
+def plot_los_fit(observed, mean: float, service: str, *, ks_d=None, wasserstein=None, save_path=None):
+    """Validation de la LOS : ECDF observée vs CDF exponentielle ajustée (moyenne)."""
+    import math
+
+    s = sorted(observed)
+    n = len(s)
+    ecdf_y = [(i + 1) / n for i in range(n)]
+    xmax = max(s) if s else 1.0
+    grid = [xmax * t / 200.0 for t in range(201)]
+    exp_y = [1.0 - math.exp(-x / mean) for x in grid] if mean > 0 else [0] * len(grid)
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.step(s, ecdf_y, where="post", color="#d62728", label="ECDF observée")
+    ax.plot(grid, exp_y, color="#1f77b4", label=f"exponentielle (moy={mean:.2f}j)")
+    ann = []
+    if ks_d is not None:
+        ann.append(f"KS D={ks_d:.3f}")
+    if wasserstein is not None:
+        ann.append(f"W1={wasserstein:.2f}j")
+    if ann:
+        ax.text(0.97, 0.05, "  ".join(ann), transform=ax.transAxes, ha="right",
+                fontsize=9, bbox=dict(boxstyle="round", fc="white", alpha=0.7))
+    ax.set_xlabel("Durée de séjour (jours)")
+    ax.set_ylabel("F(x)")
+    ax.set_title(f"Ajustement de la durée de séjour — {service}")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    return _finish(fig, save_path)
+
+
+def plot_arrival_fit(daily_counts, *, save_path=None):
+    """Validation du processus d'arrivée : histogramme observé vs pmf de Poisson."""
+    import math
+    import statistics
+    from collections import Counter
+
+    counts = list(daily_counts)
+    n = len(counts)
+    lam = statistics.fmean(counts) if counts else 0.0
+    kmax = max(counts) if counts else 0
+    freq = Counter(counts)
+    ks = list(range(kmax + 1))
+    obs = [freq.get(k, 0) / n for k in ks]
+    pois = [math.exp(-lam) * lam ** k / math.factorial(k) for k in ks]
+    index = (statistics.variance(counts) / lam) if (n > 1 and lam) else float("nan")
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.bar(ks, obs, width=0.6, color="#4c72b0", alpha=0.7, label="observé")
+    ax.plot(ks, pois, "o-", color="#dd8452", label=f"Poisson (λ={lam:.2f})")
+    ax.text(0.97, 0.9, f"dispersion={index:.2f}", transform=ax.transAxes, ha="right",
+            fontsize=9, bbox=dict(boxstyle="round", fc="white", alpha=0.7))
+    ax.set_xlabel("Arrivées par jour")
+    ax.set_ylabel("Fréquence")
+    ax.set_title("Processus d'arrivée : observé vs Poisson")
+    ax.legend(fontsize=8)
+    ax.grid(True, axis="y", alpha=0.3)
+    return _finish(fig, save_path)
+
+
 def plot_stress(result: SimulationResult, *, save_path=None):
     """Trace un bar chart des taux d'occupation moyen et pic par service."""
     ind = result.stress_indicators()
