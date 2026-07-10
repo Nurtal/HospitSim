@@ -75,6 +75,10 @@ class Scenario:
         mean_los_days: Durée moyenne de séjour par service (jours).
         default_los_days: DMS par défaut pour un service non listé.
         warmup_days: Jours de chauffe (transitoire) exclus des indicateurs.
+        routing_by_group: Routage optionnel conditionné au groupe de diagnostic
+            ``{groupe: {service: {destination: proba}}}`` ; fallback sur ``routing``.
+        diagnosis_mix: Distribution d'arrivée sur les groupes ``{groupe: proba}}``.
+            Si vide, tous les patients partagent le routage global.
         seed: Graine du générateur aléatoire (reproductibilité).
     """
 
@@ -89,6 +93,8 @@ class Scenario:
     mean_los_days: dict[str, float] = field(default_factory=_default_mean_los)
     default_los_days: float = 3.0
     warmup_days: int = 0
+    routing_by_group: dict[str, dict[str, dict[str, float]]] = field(default_factory=dict)
+    diagnosis_mix: dict[str, float] = field(default_factory=dict)
     seed: int | None = None
 
     def effective_capacity(self, service: str) -> int:
@@ -134,6 +140,7 @@ class _Active:
 
     service: str
     remaining: float
+    group: str | None = None
 
 
 @dataclass
@@ -214,12 +221,18 @@ class SimulationEngine:
         self._validate_routing()
 
     def _validate_routing(self) -> None:
-        for source, row in self.scenario.routing.items():
+        def _check(row, label):
             total = sum(row.values())
             if row and abs(total - 1.0) > _ROUTING_SUM_TOLERANCE:
                 raise ValueError(
-                    f"Routage {source!r} : la somme des probabilités doit valoir 1.0 (reçu {total})."
+                    f"Routage {label} : la somme des probabilités doit valoir 1.0 (reçu {total})."
                 )
+
+        for source, row in self.scenario.routing.items():
+            _check(row, repr(source))
+        for group, routing in self.scenario.routing_by_group.items():
+            for source, row in routing.items():
+                _check(row, f"{group!r}/{source!r}")
 
     def _sample_los(self, service: str) -> float:
         """Tire une durée de séjour (jours) selon une loi exponentielle."""
@@ -228,9 +241,25 @@ class SimulationEngine:
             return 0.0
         return self._rng.expovariate(1.0 / mean)
 
-    def _next_destination(self, service: str) -> str:
-        """Tire le devenir d'un patient quittant un service (défaut : sortie)."""
-        row = self.scenario.routing.get(service)
+    def _sample_group(self) -> str | None:
+        """Tire un groupe de diagnostic pour un patient à l'admission (ou None)."""
+        mix = self.scenario.diagnosis_mix
+        if not mix:
+            return None
+        return self._rng.choices(list(mix), weights=list(mix.values()), k=1)[0]
+
+    def _next_destination(self, service: str, group: str | None = None) -> str:
+        """Tire le devenir d'un patient quittant un service.
+
+        Utilise le routage conditionné au groupe de diagnostic s'il est défini pour
+        ``(group, service)``, sinon retombe sur le routage global (fallback pour les
+        groupes absents ou creux). Défaut : sortie.
+        """
+        row = None
+        if group is not None:
+            row = self.scenario.routing_by_group.get(group, {}).get(service)
+        if not row:
+            row = self.scenario.routing.get(service)
         if not row:
             return DISCHARGE
         return self._rng.choices(list(row), weights=list(row.values()), k=1)[0]
@@ -260,7 +289,7 @@ class SimulationEngine:
 
             # 2) Transitions : le patient garde son lit tant qu'il ne peut pas bouger.
             for pat in transitioning:
-                dest = self._next_destination(pat.service)
+                dest = self._next_destination(pat.service, pat.group)
                 if dest in TERMINALS:
                     occupancy[pat.service] -= 1
                     if dest == DEATH:
@@ -270,7 +299,7 @@ class SimulationEngine:
                 elif occupancy.get(dest, 0) < sc.effective_capacity(dest):
                     occupancy[pat.service] -= 1
                     occupancy[dest] += 1
-                    active.append(_Active(dest, self._sample_los(dest)))
+                    active.append(_Active(dest, self._sample_los(dest), pat.group))
                 else:
                     # Service cible plein : bed-blocking, nouvelle tentative demain.
                     blocked_transfer += 1
@@ -280,7 +309,7 @@ class SimulationEngine:
             # 3) Admissions depuis la file d'attente vers le service d'entrée.
             while waiting > 0 and occupancy[entry] < sc.effective_capacity(entry):
                 occupancy[entry] += 1
-                active.append(_Active(entry, self._sample_los(entry)))
+                active.append(_Active(entry, self._sample_los(entry), self._sample_group()))
                 waiting -= 1
                 admissions += 1
 

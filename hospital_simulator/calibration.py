@@ -22,9 +22,78 @@ from datetime import datetime
 
 from hospital_simulator.omop import parse_omop_date
 from hospital_simulator.pathways import ClinicalPathway
+from hospital_simulator.models._cid_validator import CID10Validator
 
 # Devenir terminal implicite en fin de trajectoire patient.
 DEFAULT_TERMINAL = "Discharge"
+
+# Groupe de diagnostic par défaut quand le code est absent/invalide.
+UNKNOWN_GROUP = "UNKNOWN"
+
+
+def diagnosis_group(code: str | None, level: str = "category") -> str:
+    """Regroupe un code CIM-10 en cohorte explicable.
+
+    Args:
+        code: code CIM-10 (ex: "J18.9").
+        level: ``"category"`` (lettre + 2 chiffres, ex: "J18") ou ``"chapter"``
+            (lettre, ex: "J").
+
+    Returns:
+        Le groupe, ou :data:`UNKNOWN_GROUP` si le code est absent/invalide.
+    """
+    if not code or not CID10Validator.is_valid(code):
+        return UNKNOWN_GROUP
+    normalized = CID10Validator.normalize(code)  # ex: "J189"
+    if level == "chapter":
+        return normalized[0]
+    if level == "category":
+        return normalized[:3]
+    raise ValueError("level doit être 'category' ou 'chapter'.")
+
+
+def _group_of_person(stays: list[dict], level: str) -> dict[str, str]:
+    """Associe chaque patient à son groupe de diagnostic (via le champ ``diagnosis``)."""
+    groups: dict[str, str] = {}
+    for stay in stays:
+        pid = str(stay.get("person_id"))
+        if pid not in groups:
+            groups[pid] = diagnosis_group(stay.get("diagnosis"), level=level)
+    return groups
+
+
+def estimate_transitions_by_group(
+    stays: list[dict],
+    *,
+    level: str = "category",
+    terminal: str | None = DEFAULT_TERMINAL,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Estime une matrice de transition **par groupe de diagnostic**.
+
+    Chaque patient est affecté à un groupe (via le champ ``diagnosis`` de ses
+    séjours) ; les transitions sont estimées séparément par groupe.
+
+    Returns:
+        ``{groupe: {service_source: {destination: probabilité}}}``.
+    """
+    groups = _group_of_person(stays, level)
+    by_group: dict[str, list[dict]] = defaultdict(list)
+    for stay in stays:
+        by_group[groups[str(stay.get("person_id"))]].append(stay)
+    return {
+        group: estimate_transition_probabilities(group_stays, terminal=terminal)
+        for group, group_stays in by_group.items()
+    }
+
+
+def estimate_diagnosis_mix(stays: list[dict], *, level: str = "category") -> dict[str, float]:
+    """Distribution d'arrivée sur les groupes de diagnostic (un patient = un tirage)."""
+    groups = _group_of_person(stays, level)
+    counts: dict[str, int] = defaultdict(int)
+    for group in groups.values():
+        counts[group] += 1
+    total = sum(counts.values())
+    return {g: n / total for g, n in counts.items()} if total else {}
 
 
 def _sequences_by_person(stays: list[dict]) -> dict[str, list[dict]]:

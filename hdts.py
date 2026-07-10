@@ -39,6 +39,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 from hospital_simulator import (  # noqa: E402
     OmopDataset,
     Scenario,
+    build_hospital_graph,
     census_sample,
     ci_coverage,
     daily_arrivals,
@@ -204,29 +205,21 @@ def _arrival_rate(stays: list[dict], entry: str) -> float:
 
 
 def build_calibrated_scenario(dataset: OmopDataset, seed: int):
-    """Calibre un Scenario data-driven ; renvoie (scenario, contexte)."""
+    """Construit le graphe hospitalier depuis l'EDS puis en dérive un Scenario.
+
+    Renvoie ``(scenario, contexte)``. Le routage conditionné au diagnostic est
+    activé automatiquement si les données le permettent (sinon fallback global).
+    """
+    graph = build_hospital_graph(dataset)
+    scenario = graph.to_scenario(name="calibrated", days=120, warmup_days=20, seed=seed)
     stays = stays_from_omop(dataset)
-    routing = estimate_transition_probabilities(stays)
-    mean_los = {svc: st["mean"] for svc, st in estimate_length_of_stay(stays).items()}
-    services = _service_universe(routing)
-    entry = _entry_service(stays, services)
-    peaks = peak_concurrency(stays)
-
-    # Capacité = 1.3 x pic d'occupation observé (min 5).
-    capacities = {svc: max(5, math.ceil(1.3 * peaks.get(svc, 0))) for svc in services}
-
-    scenario = Scenario(
-        name="calibrated",
-        days=120,
-        warmup_days=20,
-        entry_service=entry,
-        arrival_rate_per_day=round(_arrival_rate(stays, entry), 2),
-        service_capacities=capacities,
-        routing=routing,
-        mean_los_days={svc: mean_los.get(svc, 3.0) for svc in services},
-        seed=seed,
-    )
-    context = {"stays": stays, "mean_los": mean_los, "entry": entry, "peaks": peaks}
+    context = {
+        "stays": stays,
+        "mean_los": {s: v["mean_los"] for s, v in graph.services.items()},
+        "entry": graph.entry_service,
+        "peaks": peak_concurrency(stays),
+        "graph": graph,
+    }
     return scenario, context
 
 
@@ -271,10 +264,18 @@ def build_report(source, dataset, scenario, context, seed, n_reps) -> str:
     for svc, cap in scenario.service_capacities.items():
         lines.append(f"    {svc:<8} pic_observé={context['peaks'].get(svc, 0):>4}  capacité={cap}")
 
-    lines += ["", "Transitions calibrées :"]
+    lines += ["", "Transitions calibrées (global) :"]
     for src, row in scenario.routing.items():
         pretty = ", ".join(f"{d}={p:.2f}" for d, p in row.items())
         lines.append(f"    {src:<8} -> {pretty}")
+
+    if scenario.diagnosis_mix:
+        top = sorted(scenario.diagnosis_mix.items(), key=lambda kv: -kv[1])[:5]
+        lines += ["", f"Routage par diagnostic ACTIF : {len(scenario.diagnosis_mix)} groupes CIM-10.",
+                  "    Mix d'arrivée (top 5) : "
+                  + ", ".join(f"{g}={p * 100:.0f}%" for g, p in top)]
+    else:
+        lines += ["", "Routage par diagnostic : inactif (fallback global)."]
 
     lines += ["", "Validation séjour exponentiel (KS) :"]
     if los_report:
@@ -408,6 +409,12 @@ def main(argv=None) -> int:
 
     dataset, source = obtain_dataset(args)
     scenario, context = build_calibrated_scenario(dataset, args.seed)
+
+    # Le graphe hospitalier auto-construit, inspectable (JSON + DOT).
+    graph = context["graph"]
+    (args.output / "hospital_graph.json").write_text(graph.to_json(), encoding="utf-8")
+    (args.output / "hospital_graph.dot").write_text(graph.to_dot(), encoding="utf-8")
+
     report = build_report(source, dataset, scenario, context, args.seed, args.replications)
 
     print(report)

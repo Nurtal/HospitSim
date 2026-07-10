@@ -41,7 +41,11 @@ from hospital_simulator.calibration import (
     peak_concurrency,
     estimate_procedure_probabilities,
     build_pathway_from_transitions,
+    diagnosis_group,
+    estimate_transitions_by_group,
+    estimate_diagnosis_mix,
 )
+from hospital_simulator.graph import HospitalGraph, build_hospital_graph
 from hospital_simulator.validation import (
     describe,
     ks_two_sample,
@@ -108,6 +112,11 @@ __all__ = [
     "peak_concurrency",
     "estimate_procedure_probabilities",
     "build_pathway_from_transitions",
+    "diagnosis_group",
+    "estimate_transitions_by_group",
+    "estimate_diagnosis_mix",
+    "HospitalGraph",
+    "build_hospital_graph",
     "describe",
     "ks_two_sample",
     "ks_one_sample",

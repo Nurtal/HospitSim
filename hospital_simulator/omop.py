@@ -201,18 +201,29 @@ def omop_from_synthea_csv(
             }
         )
 
+    condition_rows = _read("conditions.csv")
     conditions = [
         {
             "person_id": row.get("PATIENT"),
             "condition_source_value": row.get("CODE"),
             "condition_start_date": row.get("START"),
         }
-        for row in _read("conditions.csv")
+        for row in condition_rows
     ]
     procedures = [
         {"person_id": row.get("PATIENT"), "procedure_source_value": row.get("CODE")}
         for row in _read("procedures.csv")
     ]
+
+    # Diagnostic principal = 1er code CIM-10 valide du patient -> rattaché aux visites.
+    primary_by_patient: dict[str, str] = {}
+    for row in condition_rows:
+        pid = row.get("PATIENT")
+        code = row.get("CODE")
+        if pid not in primary_by_patient and code and CID10Validator.is_valid(code):
+            primary_by_patient[pid] = code
+    for visit in visits:
+        visit["diagnosis"] = primary_by_patient.get(str(visit.get("person_id")))
 
     # Décès intra-hospitalier : DEATHDATE tombant pendant le dernier séjour aigu.
     if death_date:
@@ -322,16 +333,27 @@ def omop_from_mimic(
         )
 
     conditions = []
+    primary_by_episode: dict[str, str] = {}
     for row in _read_mimic_table(directory, "diagnoses_icd"):
         if str(row.get("icd_version")) != "10":  # on ne garde que la CIM-10
             continue
+        subject = row.get("subject_id")
+        hadm = row.get("hadm_id")
+        is_primary = str(row.get("seq_num")) == "1"
         conditions.append(
             {
-                "person_id": row.get("subject_id"),
+                "person_id": subject,
                 "condition_source_value": row.get("icd_code"),
-                "condition_status_source_value": "primary" if str(row.get("seq_num")) == "1" else "",
+                "condition_status_source_value": "primary" if is_primary else "",
             }
         )
+        if is_primary:
+            episode = f"{subject}_{hadm}" if episode_level and hadm else str(subject)
+            primary_by_episode.setdefault(episode, row.get("icd_code"))
+
+    # Diagnostic principal rattaché à chaque visite de l'épisode (routage par diagnostic).
+    for visit in visits:
+        visit["diagnosis"] = primary_by_episode.get(str(visit.get("person_id")))
 
     procedures = []
     for row in _read_mimic_table(directory, "procedures_icd"):
@@ -451,6 +473,28 @@ def patients_from_omop(
     return patients
 
 
+def _primary_diagnosis_by_person(
+    dataset: OmopDataset, code_map: dict[int, str] | None = None
+) -> dict[str, str]:
+    """Diagnostic principal CIM-10 valide par personne (primary, sinon le plus précoce)."""
+    by_person = _group_by(dataset.condition_occurrence, "person_id")
+    result: dict[str, str] = {}
+    for person_id, conditions in by_person.items():
+        ordered = sorted(
+            conditions,
+            key=lambda r: (
+                not _is_primary(r),
+                parse_omop_date(r.get("condition_start_date")) or datetime.max,
+            ),
+        )
+        for row in ordered:
+            code = _resolve_condition_code(row, code_map)
+            if code and CID10Validator.is_valid(code):
+                result[person_id] = code
+                break
+    return result
+
+
 def stays_from_omop(
     dataset: OmopDataset,
     *,
@@ -471,6 +515,9 @@ def stays_from_omop(
         (``disposition`` renseignée pour le dernier séjour d'un décès, sinon None).
     """
     service_map = service_map if service_map is not None else DEFAULT_VISIT_SERVICE_MAP
+    # Diagnostic principal par personne (fallback quand la visite n'en porte pas —
+    # cas d'un OMOP générique où le diagnostic est dans condition_occurrence).
+    primary = _primary_diagnosis_by_person(dataset)
     stays: list[dict] = []
     for visit in dataset.visit_occurrence:
         service = None
@@ -481,13 +528,15 @@ def stays_from_omop(
             service = service_map.get(_as_int(visit.get("visit_concept_id")))
         if service is None:
             continue
+        person_id = str(visit.get("person_id"))
         stays.append(
             {
-                "person_id": str(visit.get("person_id")),
+                "person_id": person_id,
                 "service": service,
                 "start": parse_omop_date(visit.get("visit_start_date")),
                 "end": parse_omop_date(visit.get("visit_end_date")),
                 "disposition": visit.get("disposition"),
+                "diagnosis": visit.get("diagnosis") or primary.get(person_id),
             }
         )
     return stays
