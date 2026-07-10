@@ -96,7 +96,31 @@ python hdts.py                        # Synthea if available, else synthetic fal
 python hdts.py --patients 2000 --figures
 python hdts.py --omop-dir /data/omop  # start from existing OMOP CSVs
 python hdts.py --mimic-dir /data/mimiciv  # calibrate from MIMIC-IV (real ICU/ward transfers)
+python hdts.py --mimic-dir /data/mimiciv --validate --figures  # + validation report & coverage figure
 python hdts.py --no-synthea           # force the synthetic generator
+```
+
+It auto-builds an **explainable hospital graph** (services + per-diagnosis
+routing), exports it to `hospital_graph.json` / `.dot`, and — with `--validate`
+— writes a validation report (census CI-coverage, arrival Poisson test, LOS
+KS/Wasserstein, Markov order-1 audit).
+
+## Explainable model & diagnosis-conditioned routing
+
+```python
+from hospital_simulator import build_hospital_graph, OmopDataset, run_replications
+
+graph = build_hospital_graph(OmopDataset.from_dir("/data/omop"))
+print(graph.to_dict()["routing_by_group"])   # e.g. I21: ED->ICU, J18: ED->Ward
+scenario = graph.to_scenario(seed=2026)       # diagnosis routing activated if data allows
+print(run_replications(scenario, 40).render_summary(metrics=["deaths", "mortality_rate"]))
+```
+
+## Interactive demonstrator (optional)
+
+```bash
+pip install -e ".[app]"
+streamlit run app/hdts_app.py    # tweak a what-if scenario, run, see indicators + figures
 ```
 
 **Data sources.** Synthea is convenient but models lifelong care and no
@@ -493,14 +517,21 @@ research practices), reported per **STRESS-DES**.
       modeling, multi-replication confidence intervals, sensitivity sweeps,
       figures, standalone `hdts.py`, 153 tests.
 
-### Phase V1 — Validation tooling
-- [ ] `validation`: **CI-coverage** of observed daily census vs simulated 95% band.
-- [ ] Point-error metrics: MAE / MAPE / bias on mean occupancy, peak census,
-      bed-days, mortality rate.
-- [ ] Distributional: KS + **Wasserstein** distance on per-unit LOS.
-- [ ] **Arrival process test** (Poisson dispersion index var/mean ≈ 1).
-- [ ] **Markov order-1 check** (order-1 vs order-2 transition fit).
-- [ ] Temporal **hold-out** harness (train window N → test window N+1).
+### Phase V1 — Validation tooling ✅
+- [x] `validation.ci_coverage`: **CI-coverage** of observed census vs simulated 95% band
+      (+ `scenario.replicated_census`, `plotting.plot_census_coverage`, `hdts.py --validate`).
+- [x] Point-error metrics: `mae` / `mape` / `bias`.
+- [x] Distributional: `ks_exponential` + `wasserstein_1d` on per-unit LOS.
+- [x] **Arrival process test** (`poisson_dispersion_test`, index var/mean ≈ 1).
+- [x] **Markov order-1 check** (`markov_order_check`, order-1 vs order-2 TV).
+- [x] Temporal **hold-out** helper (`observed.temporal_split`) + observed series
+      (`observed.daily_census` / `daily_arrivals`).
+
+### Phase V1b — Explainable auto-construction ✅ (bonus)
+- [x] First-class `HospitalGraph` auto-built from OMOP (`build_hospital_graph`,
+      `to_scenario` / `to_json` / `to_dot`); **diagnosis-conditioned routing**
+      (CIM-10 → parcours) wired into the engine with fallback for rare groups.
+- [x] Lightweight Streamlit demonstrator (`app/hdts_app.py`, extra `app`).
 
 ### Phase V2 — Operational validation on MIMIC-IV (reproducible backbone)
 - [ ] Calibrate on a training window; simulate; compare simulated vs observed:

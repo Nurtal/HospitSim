@@ -18,6 +18,10 @@ viz = [
 test = [
     "pytest>=7",
 ]
+app = [
+    "streamlit>=1.30",
+    "matplotlib>=3",
+]
 dev = ["hospital_simulator[viz,test]"]
 
 [build-system]
